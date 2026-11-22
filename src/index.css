@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: dark;
+  }
+
+  html,
+  body {
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #160932;
+    color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: contain;
+  }
+
+  button,
+  [role="button"],
+  input,
+  select {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.bakasa-bg {
+  background-color: #170933;
+  background-image:
+    repeating-linear-gradient(
+      -35deg,
+      rgba(255, 255, 255, 0.025) 0px,
+      rgba(255, 255, 255, 0.025) 2px,
+      transparent 2px,
+      transparent 16px
+    ),
+    radial-gradient(circle at 85% 92%, rgba(166, 20, 96, 0.72) 0%, transparent 55%),
+    radial-gradient(circle at 15% 15%, rgba(44, 15, 92, 0.85) 0%, transparent 60%),
+    linear-gradient(155deg, #160932 0%, #2b0c50 48%, #5e0e4e 82%, #7d114d 100%);
+  background-attachment: fixed;
+}
+
+.bakasa-card-shadow {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.bakasa-btn-green {
+  background: linear-gradient(180deg, #4cb056 0%, #3d9847 100%);
+  box-shadow: 0 6px 0 #286e30, 0 10px 20px rgba(0, 0, 0, 0.35);
+}
+
+.bakasa-btn-green:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 #286e30, 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.bakasa-btn-red {
+  background: linear-gradient(180deg, #dc665e 0%, #c65049 100%);
+  box-shadow: 0 6px 0 #91342e, 0 10px 20px rgba(0, 0, 0, 0.35);
+}
+
+.bakasa-btn-red:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 3px 0 #91342e, 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+@keyframes bomb-wobble {
+  0%, 100% {
+    transform: rotate(-2deg) scale(1);
+  }
+  50% {
+    transform: rotate(2deg) scale(1.03);
+  }
+}
+
+@keyframes bomb-urgent {
+  0%, 100% {
+    transform: rotate(-5deg) scale(1);
+  }
+  50% {
+    transform: rotate(5deg) scale(1.09);
+  }
+}
+
+@keyframes danger-pulse {
+  0%, 100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.animate-bomb-idle {
+  animation: bomb-wobble 0.9s ease-in-out infinite;
+}
+
+.animate-bomb-medium {
+  animation: bomb-wobble 0.45s ease-in-out infinite;
+}
+
+.animate-bomb-urgent {
+  animation: bomb-urgent 0.2s ease-in-out infinite;
+}
+
+.animate-danger-vignette {
+  animation: danger-pulse 0.45s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bomb-idle,
+  .animate-bomb-medium,
+  .animate-bomb-urgent,
+  .animate-danger-vignette {
+    animation: none;
+  }
+}
