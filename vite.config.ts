@@ -14,6 +14,7 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         manifestFilename: 'manifest.json',
         includeAssets: [
+          'app-icon.png',
           'icon.svg',
           'apple-touch-icon.png',
           'pwa-192x192.png',
@@ -22,14 +23,14 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'بكاسة - ألعاب اللمة',
-          short_name: 'بكاسة',
+          name: 'قعدة الشلة - ألعاب جماعية',
+          short_name: 'قعدة الشلة',
           description:
-            'لعبة جماعية عربية (Pass & Play) للموبايل من ٣ إلى ١٠ لاعبين تضم لعبة الجاسوس والقنبلة الموقوتة وتعمل بالكامل بدون إنترنت.',
+            'قعدة الشلة — ألعاب جماعية عربية (Pass & Play و 2D) للموبايل من ٢ إلى ٢٠ لاعب وتعمل بالكامل بدون إنترنت.',
           dir: 'rtl',
           lang: 'ar',
-          theme_color: '#170933',
-          background_color: '#160932',
+          theme_color: '#FFF9F0',
+          background_color: '#FFF9F0',
           display: 'standalone',
           orientation: 'portrait-primary',
           start_url: '/',
@@ -38,6 +39,12 @@ export default defineConfig(() => {
             {
               src: '/pwa-192x192.png',
               sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any',
+            },
+            {
+              src: '/app-icon.png',
+              sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
             },
@@ -56,6 +63,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          cacheId: 'qa3det-el-shella-v2',
           globPatterns: [
             '**/*.{js,css,html,ico,png,jpg,jpeg,webp,svg,woff,woff2,mp3,wav,ogg,m4a,json}',
           ],
@@ -69,7 +77,7 @@ export default defineConfig(() => {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'StaleWhileRevalidate',
               options: {
-                cacheName: 'google-fonts-stylesheets',
+                cacheName: 'qa3det-el-shella-v2-google-fonts-styles',
                 expiration: {
                   maxEntries: 10,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
@@ -83,7 +91,7 @@ export default defineConfig(() => {
               urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'google-fonts-webfonts',
+                cacheName: 'qa3det-el-shella-v2-google-fonts-web',
                 expiration: {
                   maxEntries: 20,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
@@ -97,7 +105,7 @@ export default defineConfig(() => {
               urlPattern: /\.(?:png|jpg|jpeg|webp|svg|gif|ico|mp3|wav|ogg|m4a)$/i,
               handler: 'CacheFirst',
               options: {
-                cacheName: 'bakasa-media-audio-cache',
+                cacheName: 'qa3det-el-shella-v2-media-audio',
                 expiration: {
                   maxEntries: 100,
                   maxAgeSeconds: 60 * 60 * 24 * 365,

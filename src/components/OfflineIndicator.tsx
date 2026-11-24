@@ -11,9 +11,9 @@ export const OfflineIndicator: React.FC = () => {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-2xl bg-[#271047]/95 border border-amber-400/50 px-4 py-2 text-xs font-extrabold text-amber-200 shadow-xl whitespace-nowrap"
+      className="fixed bottom-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-2xl bg-white dark:bg-[#1E293B] border-2 border-[#F59E0B] border-b-4 px-4 py-2 text-xs font-extrabold text-[#B45309] dark:text-[#FCD34D] shadow-lg whitespace-nowrap"
     >
-      <WifiOff className="w-4 h-4 text-amber-300 shrink-0" />
+      <WifiOff className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24] shrink-0" />
       <span>وضع الأوفلاين — اللعبة شغالة بالكامل بدون نت</span>
     </div>
   );

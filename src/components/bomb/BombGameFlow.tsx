@@ -1,51 +1,71 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Bomb, Flame, RefreshCw, Skull } from 'lucide-react';
-import { BANNER_COLOR_CLASSES, BOMB_PROMPTS } from '../../data/gameData';
+import { Bomb, Flame, Lock, RefreshCw, Skull } from 'lucide-react';
+import { BANNER_COLOR_CLASSES, BOMB_PROMPTS, CLASSIC_BOMB_TOPICS } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { BombPhase, Player, RoundDelta } from '../../types/game';
-import { soundManager } from '../../utils/soundManager';
+import { soundManager, triggerHaptic } from '../../utils/soundManager';
+import { recordBombExplosion } from '../../utils/sessionStats';
+import { pickUnseenItem } from '../../utils/usedItemsMemory';
 import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { TopBar } from '../TopBar';
 
 interface BombGameFlowProps {
+  mode: 'questions' | 'classic';
   players: Player[];
   onApplyDeltas: (deltas: RoundDelta[]) => void;
   onExitToHub: () => void;
 }
 
-function shufflePrompts(list: string[]): string[] {
-  const copy = [...list];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+function lerpColor(t: number): string {
+  // Interpolate dark slate (#1e293b) -> crimson (#b91c1c) -> glowing red (#ef4444)
+  const clamped = Math.max(0, Math.min(1, t));
+  if (clamped < 0.5) {
+    const k = clamped * 2;
+    const r = Math.round(30 + (185 - 30) * k);
+    const g = Math.round(41 + (28 - 41) * k);
+    const b = Math.round(59 + (28 - 59) * k);
+    return `rgb(${r}, ${g}, ${b})`;
   }
-  return copy;
+  const k = (clamped - 0.5) * 2;
+  const r = Math.round(185 + (239 - 185) * k);
+  const g = Math.round(28 + (68 - 28) * k);
+  const b = Math.round(28 + (68 - 28) * k);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 export const BombGameFlow: React.FC<BombGameFlowProps> = ({
+  mode,
   players,
   onApplyDeltas,
   onExitToHub,
 }) => {
   const guard = useTapGuard(400);
+  const isClassic = mode === 'classic';
+  const gameTitle = isClassic ? 'القنبلة' : 'أسئلة القنبلة';
 
   const [phase, setPhase] = useState<BombPhase>('READY');
-  const [promptDeck, setPromptDeck] = useState<string[]>(() => shufflePrompts(BOMB_PROMPTS));
-  const [promptIdx, setPromptIdx] = useState<number>(0);
+  const [currentPrompt, setCurrentPrompt] = useState<string>(() =>
+    isClassic ? pickUnseenItem('bomb_classic', CLASSIC_BOMB_TOPICS) : ''
+  );
   const [urgencyLevel, setUrgencyLevel] = useState<'idle' | 'medium' | 'urgent'>('idle');
+  const [bombProgress, setBombProgress] = useState<number>(0);
+  const [explodingFlash, setExplodingFlash] = useState<boolean>(false);
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
   const [loserName, setLoserName] = useState<string>('');
   const [passFlash, setPassFlash] = useState<boolean>(false);
+  const [shaking, setShaking] = useState<boolean>(false);
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
 
   const startTimeRef = useRef<number>(0);
-  const durationRef = useRef<number>(25000);
+  const durationRef = useRef<number>(60000);
   const tickTimeoutRef = useRef<number | null>(null);
   const explodeTimeoutRef = useRef<number | null>(null);
+  const blastDelayTimeoutRef = useRef<number | null>(null);
   const urgencyRafRef = useRef<number | null>(null);
+  const lastProgressStepRef = useRef<number>(-1);
 
   const isRoundInProgress = phase === 'ACTIVE' || phase === 'EXPLODED';
 
@@ -62,6 +82,10 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       window.clearTimeout(explodeTimeoutRef.current);
       explodeTimeoutRef.current = null;
     }
+    if (blastDelayTimeoutRef.current !== null) {
+      window.clearTimeout(blastDelayTimeoutRef.current);
+      blastDelayTimeoutRef.current = null;
+    }
     if (urgencyRafRef.current !== null) {
       window.cancelAnimationFrame(urgencyRafRef.current);
       urgencyRafRef.current = null;
@@ -73,64 +97,73 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
   }, [clearBombTimers]);
 
   const advancePrompt = useCallback(() => {
-    setPromptIdx((prev) => {
-      if (prev + 1 >= promptDeck.length) {
-        setPromptDeck(shufflePrompts(BOMB_PROMPTS));
-        return 0;
-      }
-      return prev + 1;
-    });
-  }, [promptDeck.length]);
+    const bucketKey = isClassic ? 'bomb_classic' : 'bomb_questions';
+    const source = isClassic ? CLASSIC_BOMB_TOPICS : BOMB_PROMPTS;
+    setCurrentPrompt(pickUnseenItem(bucketKey, source));
+  }, [isClassic]);
 
   const startBombRound = guard(() => {
     soundManager.unlock();
     clearBombTimers();
 
-    // Hidden random timer between 15 and 45 seconds
-    const hiddenMs = 15000 + Math.random() * 30000;
+    const hiddenSeconds = Math.floor(Math.random() * (180 - 30 + 1)) + 30;
+    const hiddenMs = hiddenSeconds * 1000;
     durationRef.current = hiddenMs;
     startTimeRef.current = performance.now();
+    lastProgressStepRef.current = 0;
 
-    advancePrompt();
+    if (!isClassic) {
+      advancePrompt();
+    }
+
     setUrgencyLevel('idle');
+    setBombProgress(0);
+    setExplodingFlash(false);
     setRoundDeltas([]);
     setLoserName('');
     setPhase('ACTIVE');
 
-    // Explosion trigger
     explodeTimeoutRef.current = window.setTimeout(() => {
       clearBombTimers();
       soundManager.play('explosion');
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([250, 90, 350]);
-      }
-      setPhase('EXPLODED');
+      triggerHaptic(180);
+      setBombProgress(1);
+      setShaking(true);
+      setExplodingFlash(true);
+      window.setTimeout(() => setShaking(false), 380);
+      blastDelayTimeoutRef.current = window.setTimeout(() => {
+        setExplodingFlash(false);
+        setPhase('EXPLODED');
+      }, 680);
     }, hiddenMs);
 
-    // Accelerating tick scheduler
     const scheduleNextTick = () => {
       const elapsed = performance.now() - startTimeRef.current;
       const progress = Math.min(1, elapsed / durationRef.current);
-      if (progress >= 0.99) return;
+      if (progress >= 0.995) return;
 
-      soundManager.play(progress > 0.74 ? 'tickUrgent' : 'tick', progress);
+      soundManager.play(progress > 0.78 ? 'tickUrgent' : 'tick', progress);
 
-      // Interval speeds up from ~920ms down to ~135ms
-      const nextInterval = Math.max(135, 920 - Math.pow(progress, 1.35) * 785);
+      const nextInterval = Math.max(140, 950 - Math.pow(progress, 1.4) * 810);
       tickTimeoutRef.current = window.setTimeout(scheduleNextTick, nextInterval);
     };
 
-    tickTimeoutRef.current = window.setTimeout(scheduleNextTick, 400);
+    tickTimeoutRef.current = window.setTimeout(scheduleNextTick, 450);
 
-    // Smooth visual urgency state watcher
     const updateVisualUrgency = () => {
       const elapsed = performance.now() - startTimeRef.current;
-      const progress = elapsed / durationRef.current;
+      const progress = Math.min(1, elapsed / durationRef.current);
       if (progress >= 1) return;
 
-      if (progress > 0.72) {
+      const step = Math.floor(progress * 25);
+      if (step !== lastProgressStepRef.current) {
+        lastProgressStepRef.current = step;
+        setBombProgress(progress);
+      }
+
+      if (progress > 0.75) {
         setUrgencyLevel('urgent');
-      } else if (progress > 0.42) {
+      } else if (progress > 0.45) {
         setUrgencyLevel('medium');
       } else {
         setUrgencyLevel('idle');
@@ -148,7 +181,9 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
   });
 
   const handleSelectLoser = guard((loser: Player) => {
-    soundManager.play('error');
+    soundManager.play('defeat');
+    triggerHaptic(30);
+    recordBombExplosion(loser.id);
     const deltas: RoundDelta[] = players.map((p) => ({
       playerId: p.id,
       delta: p.id === loser.id ? -100 : 0,
@@ -168,20 +203,54 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
     }
   };
 
-  const currentPrompt = promptDeck[promptIdx] ?? BOMB_PROMPTS[0];
+  const handleNewRound = () => {
+    if (isClassic) {
+      advancePrompt();
+      setUrgencyLevel('idle');
+      setBombProgress(0);
+      setPhase('READY');
+    } else {
+      startBombRound();
+    }
+  };
+
+  const displayPrompt =
+    currentPrompt || (isClassic ? CLASSIC_BOMB_TOPICS[0] : BOMB_PROMPTS[0]);
+
+  const bombBodyColor = lerpColor(Math.pow(bombProgress, 1.15));
+  const bombScale = 1 + bombProgress * 0.14;
+  // Spark tip moves closer along the fuse curve as bombProgress approaches 1
+  const sparkX = 172 - bombProgress * 44;
+  const sparkY = 34 + Math.sin(bombProgress * Math.PI) * 14 + bombProgress * 16;
 
   return (
-    <div className="relative min-h-screen flex flex-col overflow-hidden">
-      {/* Danger vignette overlay during final quarter */}
+    <div
+      className={`relative min-h-screen flex flex-col overflow-hidden ${
+        shaking ? 'animate-screen-shake' : ''
+      }`}
+    >
       {phase === 'ACTIVE' && urgencyLevel === 'urgent' && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-10 shadow-[inset_0_0_90px_30px_rgba(239,68,68,0.8)] animate-danger-vignette"
+          className="pointer-events-none fixed inset-0 z-10 shadow-[inset_0_0_95px_34px_rgba(239,68,68,0.82)] animate-danger-vignette"
         />
       )}
 
+      {/* Full-Screen Radial Blast Overlay */}
+      {explodingFlash && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-rose-600/35"
+        >
+          <div className="w-[340px] h-[340px] rounded-full bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600 animate-blast-expand shadow-[0_0_90px_40px_rgba(249,115,22,0.85)]" />
+          <div className="absolute text-5xl sm:text-6xl font-black text-white drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] animate-goal-pop">
+            بوووم! 💥
+          </div>
+        </div>
+      )}
+
       <TopBar
-        title={phase === 'LEADERBOARD' ? 'النتيجة' : 'القنبلة الموقوتة'}
+        title={phase === 'LEADERBOARD' ? 'النتيجة' : gameTitle}
         exitVariant={isRoundInProgress ? 'home' : 'back'}
         onExit={handleHeaderExit}
       />
@@ -189,159 +258,279 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       <main className="relative z-20 flex-1 w-full max-w-xl mx-auto px-4 pb-8 pt-2 flex flex-col">
         {/* PHASE 1: READY */}
         {phase === 'READY' && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center py-6">
-            <div className="w-36 h-36 mb-6 rounded-full bg-gradient-to-br from-[#7f1d1d]/60 to-[#f97316]/30 border-2 border-orange-300/30 flex items-center justify-center shadow-2xl">
-              <Bomb className="w-20 h-20 text-orange-300 animate-bomb-idle" />
+          <div className="flex-1 flex flex-col items-center justify-center text-center py-4">
+            <div className="w-32 h-32 mb-5 rounded-3xl bg-gradient-to-br from-[#FF6B4A] to-[#F59E0B] border-4 border-white dark:border-[#334155] shadow-lg flex items-center justify-center">
+              {isClassic ? (
+                <Bomb className="w-16 h-16 text-white animate-bomb-idle" />
+              ) : (
+                <Flame className="w-16 h-16 text-white animate-bomb-idle" />
+              )}
             </div>
 
-            <h2 className="text-2xl sm:text-3xl font-black text-white mb-3">
-              القنبلة الموقوتة
-            </h2>
-            <p className="text-base font-bold text-white/85 max-w-sm leading-relaxed mb-8">
-              هيظهر لك سؤال سريع — جاوب بصوت عالي واضغط{' '}
-              <span className="text-emerald-300 font-black">&quot;جاوبت - اللي بعده!&quot;</span>{' '}
-              وباصي الموبايل فوراً! الوقت مخفي وممكن تنفجر في أي لحظة.
-            </p>
+            <h2 className="text-2xl sm:text-3xl font-black text-[#1E293B] dark:text-white mb-2">{gameTitle}</h2>
+
+            {isClassic ? (
+              <>
+                <p className="text-sm sm:text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-5">
+                  الموضوع ده هيفضل ثابت طول الدور — مرّروا التليفون بسرعة وكل واحد يقول إجابة
+                  تنفع في الموضوع قبل ما القنبلة تنفجر!
+                </p>
+
+                <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-4">
+                  <div className="text-xs font-extrabold text-[#EA7A18] dark:text-amber-400 mb-2">موضوع الجولة:</div>
+                  <p className="text-2xl sm:text-3xl font-black text-[#1E293B] dark:text-white leading-snug">
+                    {displayPrompt}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={guard(() => {
+                    soundManager.play('click');
+                    advancePrompt();
+                  })}
+                  className="mb-6 min-h-[42px] px-4 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs sm:text-sm font-black text-[#1E293B] dark:text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-4 h-4 text-[#FF6B4A]" />
+                  <span>تغيير الموضوع</span>
+                </button>
+              </>
+            ) : (
+              <p className="text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-8">
+                هيظهر لك سؤال سريع — جاوب بصوت عالي واضغط{' '}
+                <span className="text-[#059669] dark:text-emerald-400 font-black">&quot;جاوبت - اللي بعده!&quot;</span>{' '}
+                عشان يتغير السؤال ويمرر الموبايل بسرعة! الوقت مخفي بين ٣٠ ثانية و٣ دقايق.
+              </p>
+            )}
 
             <button
               type="button"
               onClick={startBombRound}
               className="w-full max-w-[270px] min-h-[58px] rounded-2xl bakasa-btn-green text-white text-xl font-black tracking-wide transition-transform"
             >
-              ابدأ القنبلة!
+              {isClassic ? 'ابدأ' : 'ابدأ القنبلة!'}
             </button>
           </div>
         )}
 
-        {/* PHASE 2: ACTIVE GAMEPLAY */}
+        {/* PHASE 2: ACTIVE GAMEPLAY WITH ANIMATED CHARACTER BOMB */}
         {phase === 'ACTIVE' && (
           <div className="flex-1 flex flex-col items-center justify-between py-2">
-            {/* Animated Bomb Graphic */}
             <div className="flex-1 flex flex-col items-center justify-center w-full py-2">
               <div
-                className={`relative w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center ${
-                  urgencyLevel === 'urgent'
-                    ? 'animate-bomb-urgent'
-                    : urgencyLevel === 'medium'
-                      ? 'animate-bomb-medium'
-                      : 'animate-bomb-idle'
-                }`}
+                style={{ transform: `scale(${bombScale})`, transition: 'transform 0.2s ease-out' }}
+                className="mb-2"
               >
-                <svg viewBox="0 0 200 200" className="w-full h-full drop-shadow-[0_18px_28px_rgba(0,0,0,0.65)]" aria-hidden="true">
-                  {/* Fuse rope */}
-                  <path
-                    d="M126 52 Q148 22 172 34"
-                    stroke="#d97706"
-                    strokeWidth="8"
-                    strokeLinecap="round"
-                    fill="none"
-                  />
-                  {/* Spark */}
-                  <circle
-                    cx="173"
-                    cy="34"
-                    r={urgencyLevel === 'urgent' ? '14' : '10'}
-                    fill={urgencyLevel === 'urgent' ? '#ef4444' : '#fbbf24'}
-                  />
-                  <circle cx="173" cy="34" r="5" fill="#ffffff" />
+                <div
+                  className={`relative w-44 h-44 sm:w-52 sm:h-52 flex items-center justify-center ${
+                    urgencyLevel === 'urgent'
+                      ? 'animate-bomb-urgent'
+                      : urgencyLevel === 'medium'
+                        ? 'animate-bomb-medium'
+                        : 'animate-bomb-idle'
+                  }`}
+                >
+                  <svg
+                    viewBox="0 0 200 200"
+                    className="w-full h-full drop-shadow-[0_14px_22px_rgba(30,41,59,0.28)]"
+                    aria-hidden="true"
+                  >
+                    {/* Fuse Cap */}
+                    <rect x="82" y="42" width="32" height="18" rx="5" fill="#475569" />
+                    <path
+                      d="M126 52 Q148 22 172 34"
+                      stroke="#78350F"
+                      strokeWidth="7"
+                      strokeLinecap="round"
+                      fill="none"
+                      opacity="0.35"
+                    />
+                    {/* Active Burning Fuse */}
+                    <path
+                      d={`M102 46 Q128 38 ${sparkX} ${sparkY}`}
+                      stroke="#D97706"
+                      strokeWidth="6.5"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                    {/* Glowing Spark Tip */}
+                    <circle
+                      cx={sparkX}
+                      cy={sparkY}
+                      r={urgencyLevel === 'urgent' ? 14 : 10}
+                      fill={urgencyLevel === 'urgent' ? '#EF4444' : '#FBBF24'}
+                      opacity="0.9"
+                    />
+                    <circle cx={sparkX} cy={sparkY} r="5.5" fill="#FFFFFF" />
 
-                  {/* Bomb Cap */}
-                  <rect x="86" y="42" width="32" height="18" rx="5" fill="#475569" />
-                  <path d="M102 42 Q115 44 126 52" stroke="#f59e0b" strokeWidth="6" fill="none" />
+                    {/* Bomb Sphere shifting color with progress */}
+                    <circle
+                      cx="96"
+                      cy="118"
+                      r="64"
+                      fill={bombBodyColor}
+                      stroke={urgencyLevel === 'urgent' ? '#FCA5A5' : '#334155'}
+                      strokeWidth={urgencyLevel === 'urgent' ? '4' : '3'}
+                    />
+                    {/* Specular Highlight */}
+                    <ellipse
+                      cx="70"
+                      cy="90"
+                      rx="18"
+                      ry="10"
+                      transform="rotate(-28 70 90)"
+                      fill="#FFFFFF"
+                      opacity="0.18"
+                    />
 
-                  {/* Bomb Sphere */}
-                  <defs>
-                    <radialGradient id="bombGrad" cx="35%" cy="32%" r="68%">
-                      <stop offset="0%" stopColor="#475569" />
-                      <stop offset="45%" stopColor="#1e293b" />
-                      <stop offset="100%" stopColor="#090d16" />
-                    </radialGradient>
-                  </defs>
-                  <circle cx="96" cy="116" r="64" fill="url(#bombGrad)" stroke="#334155" strokeWidth="3" />
-                  {/* Gloss highlight */}
-                  <ellipse
-                    cx="73"
-                    cy="92"
-                    rx="18"
-                    ry="11"
-                    transform="rotate(-28 73 92)"
-                    fill="#ffffff"
-                    opacity="0.16"
-                  />
-                  {/* Warning emblem on bomb */}
-                  <circle
-                    cx="96"
-                    cy="122"
-                    r="20"
-                    fill={urgencyLevel === 'urgent' ? '#dc2626' : '#f97316'}
-                    opacity="0.9"
-                  />
-                  <path
-                    d="M96 111 L96 124 M96 130 L96 132"
-                    stroke="#ffffff"
-                    strokeWidth="4.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
+                    {/* Sweat drops appearing as bomb heats up */}
+                    {bombProgress > 0.32 && (
+                      <g className="animate-sweat-drop">
+                        <path
+                          d="M48 92 C44 99, 44 104, 48 106 C52 104, 52 99, 48 92 Z"
+                          fill="#38BDF8"
+                        />
+                      </g>
+                    )}
+                    {bombProgress > 0.62 && (
+                      <g className="animate-sweat-drop" style={{ animationDelay: '0.35s' }}>
+                        <path
+                          d="M144 96 C140 103, 140 108, 144 110 C148 108, 148 103, 144 96 Z"
+                          fill="#38BDF8"
+                        />
+                      </g>
+                    )}
+
+                    {/* Character Face (calm/nervous -> angry/panicking) */}
+                    {/* Eyes */}
+                    <ellipse cx="77" cy="112" rx="8.5" ry={bombProgress > 0.72 ? '10' : '8.5'} fill="#FFFFFF" />
+                    <ellipse cx="115" cy="112" rx="8.5" ry={bombProgress > 0.72 ? '10' : '8.5'} fill="#FFFFFF" />
+                    <circle cx="78" cy="113" r={bombProgress > 0.72 ? '3.5' : '4.5'} fill="#0F172A" />
+                    <circle cx="114" cy="113" r={bombProgress > 0.72 ? '3.5' : '4.5'} fill="#0F172A" />
+
+                    {/* Eyebrows shifting from worried to furious V-shape */}
+                    {bombProgress > 0.48 ? (
+                      <>
+                        <line x1="65" y1="96" x2="86" y2="103" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" />
+                        <line x1="127" y1="96" x2="106" y2="103" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" />
+                      </>
+                    ) : (
+                      <>
+                        <line x1="66" y1="100" x2="85" y2="97" stroke="#CBD5E1" strokeWidth="3.5" strokeLinecap="round" />
+                        <line x1="126" y1="100" x2="107" y2="97" stroke="#CBD5E1" strokeWidth="3.5" strokeLinecap="round" />
+                      </>
+                    )}
+
+                    {/* Mouth: nervous wavy -> open panicked grimace */}
+                    {bombProgress > 0.72 ? (
+                      <path
+                        d="M78 139 L85 133 L92 140 L100 133 L107 140 L114 134"
+                        stroke="#FDE047"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                      />
+                    ) : bombProgress > 0.38 ? (
+                      <path
+                        d="M80 137 Q88 131 96 137 Q104 143 112 137"
+                        stroke="#FFFFFF"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                        fill="none"
+                      />
+                    ) : (
+                      <line
+                        x1="82"
+                        y1="137"
+                        x2="110"
+                        y2="137"
+                        stroke="#E2E8F0"
+                        strokeWidth="3.5"
+                        strokeLinecap="round"
+                      />
+                    )}
+                  </svg>
+                </div>
               </div>
 
-              {/* Prompt Card */}
+              {/* Prompt / Locked Topic Card */}
               <div
-                className={`w-full max-w-md rounded-3xl border-2 p-6 text-center shadow-2xl transition-colors duration-150 ${
+                className={`w-full max-w-md rounded-3xl border-2 border-b-[6px] p-6 text-center shadow-lg transition-colors duration-150 ${
                   passFlash
-                    ? 'bg-emerald-900/80 border-emerald-400'
-                    : 'bg-[#1a0b33]/95 border-white/20'
+                    ? 'bg-[#ECFDF5] dark:bg-emerald-950/80 border-[#10B981] border-b-[#059669]'
+                    : isClassic
+                      ? 'bg-white dark:bg-[#1E293B] border-[#F59E0B] border-b-[#D97706]'
+                      : 'bg-white dark:bg-[#1E293B] border-[#E7DEC8] dark:border-[#334155] border-b-[#D5C7B2] dark:border-b-[#0B1120]'
                 }`}
               >
-                <div className="text-xs font-extrabold text-orange-300 mb-2 flex items-center justify-center gap-1.5">
-                  <Flame className="w-4 h-4" />
-                  <span>جاوب بسرعة وباصي الموبايل</span>
+                <div className="text-xs font-extrabold text-[#D94E30] dark:text-[#FB7185] mb-2 flex items-center justify-center gap-1.5">
+                  {isClassic ? (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      <span>الموضوع الثابت — مرّر التليفون بسرعة!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Flame className="w-4 h-4" />
+                      <span>جاوب بسرعة وباصي الموبايل</span>
+                    </>
+                  )}
                 </div>
-                <p className="text-2xl sm:text-3xl font-black text-white leading-snug">
-                  {currentPrompt}
+                <p className="text-2xl sm:text-3xl font-black text-[#1E293B] dark:text-white leading-snug">
+                  {displayPrompt}
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={guard(() => {
-                  soundManager.play('click');
-                  advancePrompt();
-                })}
-                className="mt-3 min-h-[40px] px-4 rounded-xl text-xs font-bold text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-1.5 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>تغيير السؤال</span>
-              </button>
+              {!isClassic && (
+                <button
+                  type="button"
+                  onClick={guard(() => {
+                    soundManager.play('click');
+                    advancePrompt();
+                  })}
+                  className="mt-3 min-h-[40px] px-4 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs font-black text-[#64748B] dark:text-[#94A3B8] hover:text-[#1E293B] dark:hover:text-white flex items-center gap-1.5 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-[#FF6B4A]" />
+                  <span>تغيير السؤال</span>
+                </button>
+              )}
             </div>
 
-            {/* Huge Bottom Action CTA */}
-            <div className="w-full max-w-md pt-3">
-              <button
-                type="button"
-                onClick={handlePassedBomb}
-                className="w-full min-h-[68px] rounded-2xl bakasa-btn-green text-white text-2xl font-black tracking-wide transition-transform"
-              >
-                جاوبت - اللي بعده!
-              </button>
-            </div>
+            {!isClassic ? (
+              <div className="w-full max-w-md pt-3">
+                <button
+                  type="button"
+                  onClick={handlePassedBomb}
+                  className="w-full min-h-[68px] rounded-2xl bakasa-btn-green text-white text-2xl font-black tracking-wide transition-transform"
+                >
+                  جاوبت - اللي بعده!
+                </button>
+              </div>
+            ) : (
+              <div className="w-full max-w-md pt-3 text-center">
+                <div className="rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-3.5 text-sm sm:text-base font-extrabold text-[#B45309] dark:text-amber-300">
+                  كل لاعب يقول إجابة ويدي الموبايل للي جنبه فوراً!
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* PHASE 3: EXPLODED - SELECT HOLDER */}
         {phase === 'EXPLODED' && (
           <div className="flex-1 flex flex-col items-center py-4">
-            <div className="w-full max-w-md rounded-3xl bg-[#3d1122]/90 border-2 border-[#cf5b54] p-5 text-center shadow-2xl mb-5">
-              <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-[#cf5b54]/25 border border-[#cf5b54] flex items-center justify-center text-[#fca5a5]">
+            <div className="w-full max-w-md rounded-3xl bg-[#FFF1F2] dark:bg-rose-950/75 border-2 border-[#F43F5E] border-b-[6px] border-b-[#BE123C] p-5 text-center shadow-lg mb-5 animate-splash-pop">
+              <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-[#FFE4E6] dark:bg-rose-900/70 border-2 border-[#FDA4AF] dark:border-rose-700 flex items-center justify-center text-[#E11D48] dark:text-rose-200">
                 <Skull className="w-9 h-9" />
               </div>
-              <h2 className="text-3xl font-black text-white mb-1">بوووم! انفجرت!</h2>
-              <p className="text-sm sm:text-base font-bold text-rose-200">
-                اختار مين اللي كان ماسك الموبايل عشان يتخصم منه ١٠٠ نقطة
+              <h2 className="text-3xl font-black text-[#BE123C] dark:text-rose-200 mb-1">بوووم! انفجرت!</h2>
+              <p className="text-sm sm:text-base font-bold text-[#475569] dark:text-rose-100">
+                التليفون كان في إيد مين لما انفجرت؟ (يتخصم منه ١٠٠ نقطة)
               </p>
             </div>
 
-            <div className="w-full max-w-md flex flex-col gap-3">
+            <div className="w-full max-w-md flex flex-col gap-3.5">
               {players.map((player) => {
                 const style = BANNER_COLOR_CLASSES[player.color];
                 return (
@@ -349,7 +538,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                     key={player.id}
                     type="button"
                     onClick={() => handleSelectLoser(player)}
-                    className={`w-full min-h-[64px] rounded-2xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-2 flex items-center justify-between gap-3 text-right transition-transform active:scale-[0.98] hover:brightness-105`}
+                    className={`w-full min-h-[64px] rounded-2xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-2 flex items-center justify-between gap-3 text-right transition-transform active:scale-95 hover:brightness-105`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <PlayerAvatar avatarId={player.avatarId} name={player.name} size="md" />
@@ -357,7 +546,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                         {player.name}
                       </span>
                     </div>
-                    <span className="shrink-0 rounded-xl bg-black/30 px-3 py-1 text-xs font-black text-rose-200 tabular-nums">
+                    <span className="shrink-0 rounded-xl bg-white/95 px-3 py-1 text-xs font-black text-[#BE123C] tabular-nums shadow-sm">
                       -١٠٠ نقطة
                     </span>
                   </button>
@@ -373,7 +562,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
             players={players}
             deltas={roundDeltas}
             summaryHeadline={`القنبلة انفجرت في ${loserName} (-١٠٠ نقطة)`}
-            onNewRound={() => startBombRound()}
+            onNewRound={handleNewRound}
             onFinishGame={() => {
               clearBombTimers();
               onExitToHub();

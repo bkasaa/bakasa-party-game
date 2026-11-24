@@ -143,7 +143,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
 
       {badge && (
         <span
-          className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${badge.bg} ${badge.text} text-[11px] font-black flex items-center justify-center shadow ring-2 ring-[#1e0b3a] tabular-nums`}
+          className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${badge.bg} ${badge.text} text-[11px] font-black flex items-center justify-center shadow ring-2 ring-white dark:ring-[#1E293B] tabular-nums`}
         >
           {rank}
         </span>

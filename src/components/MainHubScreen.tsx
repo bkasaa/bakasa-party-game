@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronLeft, Lock, Users } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, Dices, Lock, Users } from 'lucide-react';
 import { BANNER_COLOR_CLASSES, HUB_GAMES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { GameId, Player } from '../types/game';
-import { soundManager } from '../utils/soundManager';
+import { soundManager, triggerHaptic } from '../utils/soundManager';
 import { BannerThumb } from './BannerThumb';
 import { PWAInstallButton } from './PWAInstallButton';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -22,6 +22,9 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
 }) => {
   const guard = useTapGuard(400);
   const [comingSoonToast, setComingSoonToast] = useState<string | null>(null);
+  const [rouletteId, setRouletteId] = useState<GameId | null>(null);
+  const [isSpinning, setIsSpinning] = useState<boolean>(false);
+  const spinTimersRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (!comingSoonToast) return;
@@ -29,9 +32,18 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
     return () => window.clearTimeout(timer);
   }, [comingSoonToast]);
 
+  useEffect(() => {
+    return () => {
+      spinTimersRef.current.forEach((id) => window.clearTimeout(id));
+      spinTimersRef.current = [];
+    };
+  }, []);
+
   const sortedPlayers = [...players].sort((a, b) => b.score - a.score);
+  const activeGames = HUB_GAMES.filter((g) => g.active);
 
   const handleCardTap = guard((gameId: GameId, active: boolean, title: string) => {
+    if (isSpinning) return;
     soundManager.unlock();
     if (!active) {
       soundManager.play('error');
@@ -42,20 +54,60 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
     onSelectGame(gameId);
   });
 
+  const handleRandomPick = guard(() => {
+    if (isSpinning || activeGames.length === 0) return;
+    soundManager.unlock();
+    setIsSpinning(true);
+
+    spinTimersRef.current.forEach((id) => window.clearTimeout(id));
+    spinTimersRef.current = [];
+
+    const finalGame = activeGames[Math.floor(Math.random() * activeGames.length)];
+    const steps = 8;
+    let delay = 0;
+
+    for (let i = 0; i < steps; i++) {
+      const interval = 75 + i * 24;
+      delay += interval;
+      const isLast = i === steps - 1;
+      const candidate = isLast
+        ? finalGame
+        : activeGames[(i + Math.floor(Math.random() * activeGames.length)) % activeGames.length];
+
+      const t = window.setTimeout(() => {
+        setRouletteId(candidate.id);
+        if (isLast) {
+          soundManager.play('victory');
+          triggerHaptic(25);
+        } else {
+          soundManager.play('tick', i / steps);
+        }
+      }, delay);
+      spinTimersRef.current.push(t);
+    }
+
+    const launchTimer = window.setTimeout(() => {
+      setIsSpinning(false);
+      setRouletteId(null);
+      onSelectGame(finalGame.id);
+    }, delay + 340);
+    spinTimersRef.current.push(launchTimer);
+  });
+
   return (
     <div className="min-h-screen flex flex-col">
-      <TopBar title="تلعب ايه" exitVariant="back" exitLabel="تعديل اللاعبين" onExit={onEditPlayers} />
+      <TopBar title="تلعبوا إيه؟" exitVariant="back" exitLabel="تعديل اللاعبين" onExit={onEditPlayers} />
 
       <main className="flex-1 w-full max-w-xl mx-auto px-4 pb-10 pt-2 flex flex-col">
         {/* Active players score summary strip */}
         <section
           aria-label="ملخص نقاط اللاعبين"
-          className="mb-6 rounded-2xl bg-[#271047]/80 border border-white/15 p-3"
+          className="mb-4 rounded-3xl qada-card p-3.5"
         >
           <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
-            <span className="text-xs font-extrabold text-white/80 flex items-center gap-1.5">
-              <Users className="w-4 h-4 text-pink-300" />
-              <span>القعدة الحالية ({players.length} لاعبين)</span>
+            <span className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5">
+              <Users className="w-4 h-4 text-[#FF6B4A]" />
+              <span>الشلة الحالية ({players.length} لاعبين)</span>
             </span>
             <button
               type="button"
@@ -63,7 +115,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                 soundManager.play('click');
                 onEditPlayers();
               })}
-              className="text-xs font-extrabold text-emerald-300 hover:text-emerald-200 min-h-[32px] px-2 rounded-lg hover:bg-white/10 transition-colors"
+              className="text-xs font-black text-[#0D9488] dark:text-[#2DD4BF] hover:text-[#0F766E] min-h-[34px] px-2.5 rounded-xl bg-[#F0FDFA] dark:bg-teal-950/50 border border-[#99F6E4] dark:border-teal-800 transition-colors"
             >
               تعديل اللاعبين
             </button>
@@ -73,14 +125,14 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
             {sortedPlayers.map((player) => (
               <div
                 key={player.id}
-                className="shrink-0 flex items-center gap-2 rounded-xl bg-black/25 border border-white/10 px-2.5 py-1.5"
+                className="shrink-0 flex items-center gap-2 rounded-2xl bg-[#FFF9F0] dark:bg-[#0F172A]/80 border border-[#EAE0D0] dark:border-[#334155] px-2.5 py-1.5"
               >
                 <PlayerAvatar avatarId={player.avatarId} name={player.name} size="sm" />
                 <div className="leading-tight">
-                  <div className="text-xs font-extrabold text-white max-w-[84px] truncate">
+                  <div className="text-xs font-extrabold text-[#1E293B] dark:text-[#F8FAFC] max-w-[84px] truncate">
                     {player.name}
                   </div>
-                  <div className="text-[11px] font-bold text-pink-200 tabular-nums">
+                  <div className="text-[11px] font-black text-[#D94E30] dark:text-[#FB7185] tabular-nums">
                     {player.score} نقطة
                   </div>
                 </div>
@@ -89,20 +141,47 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
           </div>
         </section>
 
-        {/* 5 Colorful Bakasa Game Banners */}
+        {/* Random Game Picker Roulette Button */}
+        <button
+          type="button"
+          disabled={isSpinning}
+          onClick={handleRandomPick}
+          className="mb-5 w-full min-h-[54px] rounded-2xl qada-btn-amber px-4 py-2.5 flex items-center justify-center gap-2.5 text-[#1E293B] font-black text-base sm:text-lg transition-transform active:scale-95 disabled:opacity-85"
+        >
+          <Dices className={`w-5 h-5 shrink-0 ${isSpinning ? 'animate-spin' : ''}`} />
+          <span>{isSpinning ? 'بنختار لكم لعبة...' : '🎲 فاجئنا! (اختيار عشوائي)'}</span>
+        </button>
+
+        {/* Living Tactile Party Game Banners */}
         <div className="flex flex-col gap-5">
-          {HUB_GAMES.map((game) => {
+          {HUB_GAMES.map((game, idx) => {
             const style = BANNER_COLOR_CLASSES[game.color];
+            const isHighlighted = rouletteId === game.id;
             return (
               <button
                 key={game.id}
                 type="button"
                 onClick={() => handleCardTap(game.id, game.active, game.title)}
-                className={`w-full min-h-[76px] rounded-2xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-2.5 flex items-center justify-between gap-3 text-right transition-transform active:scale-[0.98] ${
+                className={`group relative overflow-hidden w-full min-h-[78px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-3 flex items-center justify-between gap-3 text-right transition-all active:scale-95 ${
                   !game.active ? 'opacity-80' : 'hover:brightness-105'
+                } ${
+                  isHighlighted
+                    ? 'ring-4 ring-[#F59E0B] scale-[1.03] brightness-110'
+                    : isSpinning
+                      ? 'opacity-65'
+                      : ''
                 }`}
               >
-                <div className="flex items-center gap-3.5 min-w-0">
+                {/* Asymmetric floating corner circle & subtle shimmer */}
+                <div className="pointer-events-none absolute -top-6 -left-6 w-24 h-24 rounded-full bg-white/10" />
+                {game.active && (
+                  <div
+                    className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer-sweep"
+                    style={{ animationDelay: `${idx * 0.9}s` }}
+                  />
+                )}
+
+                <div className="relative flex items-center gap-3.5 min-w-0">
                   <BannerThumb type={game.id} locked={!game.active} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -110,19 +189,19 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                         {game.title}
                       </span>
                       {!game.active && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-black/35 border border-white/20 px-2 py-0.5 text-[11px] font-black text-amber-200 shrink-0">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-black/25 border border-white/25 px-2 py-0.5 text-[11px] font-black text-amber-100 shrink-0">
                           <Lock className="w-3 h-3" />
                           قريباً
                         </span>
                       )}
                     </div>
-                    <p className="text-xs sm:text-sm font-bold text-white/85 truncate mt-0.5">
+                    <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
                       {game.subtitle}
                     </p>
                   </div>
                 </div>
 
-                <div className="shrink-0 text-white/90">
+                <div className="relative shrink-0 text-white/95 transition-transform group-hover:-translate-x-1">
                   {game.active ? (
                     <ChevronLeft className="w-6 h-6" />
                   ) : (
@@ -143,7 +222,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
         {comingSoonToast && (
           <div
             role="status"
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-[#190a37]/95 border border-amber-300/40 px-5 py-3 text-sm font-black text-amber-200 shadow-2xl whitespace-nowrap"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 rounded-2xl bg-white dark:bg-[#1E293B] border-2 border-[#F59E0B] border-b-4 px-5 py-3 text-sm font-black text-[#B45309] dark:text-[#FCD34D] shadow-xl whitespace-nowrap"
           >
             {comingSoonToast}
           </div>

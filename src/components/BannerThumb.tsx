@@ -1,39 +1,51 @@
 import React from 'react';
 import {
+  Apple,
   Bomb,
+  Briefcase,
+  Bus,
+  Car,
   Clapperboard,
   EyeOff,
-  Gavel,
+  Flame,
+  Gamepad2,
+  Globe,
   Landmark,
   Palette,
   PawPrint,
-  Shirt,
-  Sparkles,
+  Sofa,
+  Trophy,
   UserCheck,
   Utensils,
 } from 'lucide-react';
-import { GameId, SpyCategory } from '../types/game';
+import { GameId, SpyIconType } from '../types/game';
 
 interface BannerThumbProps {
-  type: GameId | SpyCategory['iconType'];
+  type: GameId | SpyIconType;
   locked?: boolean;
 }
 
 const THUMB_CONFIG: Record<
-  GameId | SpyCategory['iconType'],
+  GameId | SpyIconType,
   { gradient: string; Icon: React.ComponentType<{ className?: string }> }
 > = {
   spy: { gradient: 'from-[#2e1065] to-[#be185d]', Icon: EyeOff },
-  bomb: { gradient: 'from-[#7f1d1d] to-[#f97316]', Icon: Bomb },
+  bomb_questions: { gradient: 'from-[#7f1d1d] to-[#ef4444]', Icon: Flame },
+  bomb_classic: { gradient: 'from-[#7c2d12] to-[#f97316]', Icon: Bomb },
   draw: { gradient: 'from-[#1e3a8a] to-[#06b6d4]', Icon: Palette },
   forger: { gradient: 'from-[#064e3b] to-[#10b981]', Icon: UserCheck },
-  court: { gradient: 'from-[#78350f] to-[#f59e0b]', Icon: Gavel },
+  places: { gradient: 'from-[#7c2d12] to-[#f59e0b]', Icon: Landmark },
   food: { gradient: 'from-[#991b1b] to-[#ef4444]', Icon: Utensils },
   movies: { gradient: 'from-[#0f172a] to-[#2563eb]', Icon: Clapperboard },
-  places: { gradient: 'from-[#7c2d12] to-[#f59e0b]', Icon: Landmark },
+  sports: { gradient: 'from-[#065f46] to-[#22c55e]', Icon: Trophy },
+  jobs: { gradient: 'from-[#312e81] to-[#6366f1]', Icon: Briefcase },
   animals: { gradient: 'from-[#831843] to-[#ec4899]', Icon: PawPrint },
-  clothes: { gradient: 'from-[#065f46] to-[#22c55e]', Icon: Shirt },
-  girls: { gradient: 'from-[#4c1d95] to-[#a855f7]', Icon: Sparkles },
+  countries: { gradient: 'from-[#164e63] to-[#06b6d4]', Icon: Globe },
+  cars: { gradient: 'from-[#1e293b] to-[#64748b]', Icon: Car },
+  home: { gradient: 'from-[#581c87] to-[#a855f7]', Icon: Sofa },
+  gaming: { gradient: 'from-[#4c1d95] to-[#ec4899]', Icon: Gamepad2 },
+  fruits: { gradient: 'from-[#14532d] to-[#84cc16]', Icon: Apple },
+  transport: { gradient: 'from-[#9a3412] to-[#fb923c]', Icon: Bus },
 };
 
 export const BannerThumb: React.FC<BannerThumbProps> = ({ type, locked }) => {
