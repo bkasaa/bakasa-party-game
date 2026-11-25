@@ -25,12 +25,12 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/65 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
     >
-      <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#1E293B] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-[6px] border-b-[#D5C7B2] dark:border-b-[#0B1120] p-6 shadow-2xl text-center">
+      <div className="w-full max-w-sm rounded-3xl qada-glass-modal p-6 text-center">
         <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-[#FFF1F2] dark:bg-rose-950/50 border-2 border-[#FECDD3] dark:border-rose-800/60 flex items-center justify-center text-[#E11D48] dark:text-rose-400">
           <AlertTriangle className="w-8 h-8" />
         </div>

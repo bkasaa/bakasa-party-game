@@ -85,15 +85,35 @@ const SLOT_ROTATE_STYLE: Record<CornerSlot, string> = {
   'bottom-right': '-rotate-45',
 };
 
+function getFrogTongueReach(w: number, h: number): number {
+  const padInsetX = Math.max(82, Math.min(126, w * 0.24));
+  const padInsetY = Math.max(115, Math.min(160, h * 0.21));
+  const distToCenter = Math.hypot(w * 0.5 - padInsetX, h * 0.5 - padInsetY);
+  return Math.max(Math.min(w, h) * 0.65, distToCenter + 38);
+}
+
+function getCenterPondBounds(w: number, h: number) {
+  return {
+    minX: w * 0.24,
+    maxX: w * 0.76,
+    minY: h * 0.27,
+    maxY: h * 0.73,
+  };
+}
+
 function spawnBug(id: number, w: number, h: number, speedMult: number): PondBug {
   const r = Math.random();
   const kind: BugKind = r < 0.2 ? 'gold' : r < 0.4 ? 'wasp' : 'fly';
+  const bounds = getCenterPondBounds(w, h);
   const fromLeft = Math.random() < 0.5;
-  const x = fromLeft ? 24 : w - 24;
-  const y = h * 0.25 + Math.random() * (h * 0.5);
-  const baseSpeed = kind === 'gold' ? 132 : kind === 'wasp' ? 108 : 92;
+  const x = fromLeft ? bounds.minX + 10 : bounds.maxX - 10;
+  const y = bounds.minY + Math.random() * (bounds.maxY - bounds.minY);
+  const baseSpeed = kind === 'gold' ? 128 : kind === 'wasp' ? 104 : 88;
   const speed = baseSpeed * speedMult;
-  const angleToMid = Math.atan2(h / 2 + (Math.random() - 0.5) * (h * 0.26) - y, w / 2 - x);
+  const angleToMid = Math.atan2(
+    h / 2 + (Math.random() - 0.5) * (h * 0.16) - y,
+    w / 2 + (Math.random() - 0.5) * (w * 0.12) - x
+  );
 
   return {
     id,
@@ -103,7 +123,7 @@ function spawnBug(id: number, w: number, h: number, speedMult: number): PondBug 
     vx: Math.cos(angleToMid) * speed,
     vy: Math.sin(angleToMid) * speed,
     wobbleSeed: Math.random() * 10,
-    nextTurnAt: performance.now() + 900 + Math.random() * 1100,
+    nextTurnAt: performance.now() + 850 + Math.random() * 950,
   };
 }
 
@@ -340,8 +360,8 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
     const baseSpeedMult = 1 + (roundNum - 1) * 0.14;
     for (let i = 0; i < 8; i++) {
       const b = spawnBug(nextBugIdRef.current++, w, h, baseSpeedMult);
-      b.x = w * 0.22 + Math.random() * (w * 0.56);
-      b.y = h * 0.28 + Math.random() * (h * 0.44);
+      b.x = w * 0.3 + Math.random() * (w * 0.4);
+      b.y = h * 0.32 + Math.random() * (h * 0.36);
       initialBugs.push(b);
     }
     bugsRef.current = initialBugs;
@@ -433,7 +453,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
       }
 
       const timeSec = now / 1000;
-      const tongueReach = Math.min(w, h) * 0.56;
+      const tongueReach = getFrogTongueReach(w, h);
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -568,13 +588,13 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
     };
   }, [phase, matchSeconds, resetMatchState, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round banner
+  // Auto-advance after 3s floating inter-round banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setRoundNum((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -605,31 +625,34 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
       }
 
       const { w, h } = arenaSizeRef.current;
-      const tongueReach = Math.min(w, h) * 0.56;
+      const tongueReach = getFrogTongueReach(w, h);
+      const pondBounds = getCenterPondBounds(w, h);
       const speedMult = 1 + progress * 0.55 + Math.min(0.8, (roundNum - 1) * 0.14);
       const oscSpeed = 1.7 + progress * 1.55 + Math.min(1.2, (roundNum - 1) * 0.25);
 
-      // Update bugs with mid-air darting & path shifts
+      // Update bugs with mid-air darting clustered toward the central pond
       const nextBugs: PondBug[] = [];
       for (const bug of bugsRef.current) {
         if (now >= bug.nextTurnAt) {
-          bug.nextTurnAt = now + 700 + Math.random() * 900;
+          bug.nextTurnAt = now + 700 + Math.random() * 850;
           const speed = Math.hypot(bug.vx, bug.vy) * (0.95 + progress * 0.15);
           const curAngle = Math.atan2(bug.vy, bug.vx);
-          const turnDelta = (Math.random() - 0.5) * (1.5 + progress * 0.9);
-          const nextAngle = curAngle + turnDelta;
-          bug.vx = Math.cos(nextAngle) * Math.min(210, speed);
-          bug.vy = Math.sin(nextAngle) * Math.min(210, speed);
+          const toCenterAngle = Math.atan2(h * 0.5 - bug.y, w * 0.5 - bug.x);
+          const distFromCenter = Math.hypot(bug.x - w * 0.5, bug.y - h * 0.5);
+          const bias = distFromCenter > Math.min(w, h) * 0.18 ? 0.42 : 0.15;
+          const turnDelta = (Math.random() - 0.5) * (1.35 + progress * 0.8);
+          const blended = curAngle + turnDelta + Math.atan2(Math.sin(toCenterAngle - curAngle), Math.cos(toCenterAngle - curAngle)) * bias;
+          bug.vx = Math.cos(blended) * Math.min(205, speed);
+          bug.vy = Math.sin(blended) * Math.min(205, speed);
         }
 
         bug.x += bug.vx * dt;
-        bug.y += (bug.vy + Math.sin(elapsedSec * (5 + progress * 3) + bug.wobbleSeed) * 32) * dt;
+        bug.y += (bug.vy + Math.sin(elapsedSec * (5 + progress * 3) + bug.wobbleSeed) * 28) * dt;
 
-        const padY = h * 0.2;
-        if (bug.x < 34 && bug.vx < 0) bug.vx = -bug.vx;
-        if (bug.x > w - 34 && bug.vx > 0) bug.vx = -bug.vx;
-        if (bug.y < padY && bug.vy < 0) bug.vy = -bug.vy;
-        if (bug.y > h - padY && bug.vy > 0) bug.vy = -bug.vy;
+        if (bug.x < pondBounds.minX && bug.vx < 0) bug.vx = -bug.vx;
+        if (bug.x > pondBounds.maxX && bug.vx > 0) bug.vx = -bug.vx;
+        if (bug.y < pondBounds.minY && bug.vy < 0) bug.vy = -bug.vy;
+        if (bug.y > pondBounds.maxY && bug.vy > 0) bug.vy = -bug.vy;
 
         nextBugs.push(bug);
       }
@@ -862,7 +885,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
           roundNum={roundNum}
           totalRounds={totalRounds}
           headline={summaryText}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 

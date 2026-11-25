@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Eraser, Trash2, Undo2 } from 'lucide-react';
+import { Eraser, Maximize2, Minimize2, Trash2, Undo2 } from 'lucide-react';
 import { soundManager } from '../../utils/soundManager';
 
 export interface DrawStroke {
@@ -12,10 +12,14 @@ interface DrawingCanvasProps {
   locked?: boolean;
   strokes: DrawStroke[];
   onStrokesChange?: (strokes: DrawStroke[]) => void;
+  isFullscreen?: boolean;
+  onToggleFullscreen?: () => void;
+  fullscreenHeader?: React.ReactNode;
+  fullscreenFooter?: React.ReactNode;
 }
 
 const LOGICAL_WIDTH = 800;
-const LOGICAL_HEIGHT = 600;
+const LOGICAL_HEIGHT = 960;
 
 const COLOR_SWATCHES = [
   { id: 'black', hex: '#111827', label: 'أسود', isEraser: false },
@@ -69,6 +73,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   locked = false,
   strokes,
   onStrokesChange,
+  isFullscreen = false,
+  onToggleFullscreen,
+  fullscreenHeader,
+  fullscreenFooter,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const activeStrokeRef = useRef<DrawStroke | null>(null);
@@ -97,7 +105,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
 
   useEffect(() => {
     redrawAll(strokes, activeStrokeRef.current);
-  }, [strokes, redrawAll]);
+  }, [strokes, redrawAll, isFullscreen]);
 
   // If locked suddenly flips to true mid-stroke, commit active stroke cleanly
   useEffect(() => {
@@ -145,7 +153,6 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     const pt = getLogicalPoint(e.clientX, e.clientY);
     const pts = activeStrokeRef.current.points;
     const last = pts[pts.length - 1];
-    // Skip redundant sub-pixel samples
     if (last && Math.hypot(pt.x - last.x, pt.y - last.y) < 1.5) {
       return;
     }
@@ -174,11 +181,159 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
     onStrokesChange([]);
   };
 
+  const toolbar = !locked && (
+    <div className={`w-full rounded-2xl qada-card ${isFullscreen ? 'p-2 gap-1.5' : 'p-2.5 gap-2.5'} flex flex-col shrink-0`}>
+      {/* Row 1: Color Swatches */}
+      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+        {COLOR_SWATCHES.map((swatch) => {
+          const isActive = selectedColor === swatch.hex;
+          return (
+            <button
+              key={swatch.id}
+              type="button"
+              aria-label={swatch.label}
+              onClick={() => {
+                soundManager.play('click');
+                setSelectedColor(swatch.hex);
+              }}
+              className={`${isFullscreen ? 'min-w-[32px] min-h-[32px]' : 'min-w-[36px] min-h-[36px]'} flex-1 max-w-[44px] rounded-xl flex items-center justify-center transition-transform ${
+                isActive
+                  ? 'ring-2 ring-[#FF6B4A] ring-offset-2 ring-offset-white dark:ring-offset-[#1E293B] scale-105'
+                  : 'opacity-90 hover:opacity-100'
+              } ${swatch.isEraser ? 'border-2 border-[#CBD5E1] text-[#1E293B]' : 'border border-black/15'}`}
+              style={{ backgroundColor: swatch.hex }}
+            >
+              {swatch.isEraser && <Eraser className="w-4 h-4" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Row 2: Brush sizes + Undo & Clear */}
+      <div className={`flex items-center justify-between gap-2 ${isFullscreen ? 'pt-1.5' : 'pt-2'} border-t border-[#F1E8DA] dark:border-[#334155]`}>
+        <div className="flex items-center gap-1.5">
+          {BRUSH_SIZES.map((b) => {
+            const isActive = brushSize === b.size;
+            return (
+              <button
+                key={b.id}
+                type="button"
+                aria-label={`حجم الفرشاة ${b.label}`}
+                onClick={() => {
+                  soundManager.play('click');
+                  setBrushSize(b.size);
+                }}
+                className={`${isFullscreen ? 'min-w-[38px] min-h-[34px]' : 'min-w-[44px] min-h-[40px]'} rounded-xl flex items-center justify-center transition-colors ${
+                  isActive
+                    ? 'bg-[#14B8A6] text-white shadow-sm'
+                    : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#1E293B] dark:hover:text-white'
+                }`}
+              >
+                <span className={`${b.dotClass} rounded-full bg-current`} />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="تراجع عن آخر خطوة"
+            disabled={strokes.length === 0}
+            onClick={handleUndo}
+            className={`${isFullscreen ? 'min-w-[42px] min-h-[34px] px-2.5' : 'min-w-[48px] min-h-[40px] px-3'} rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] hover:bg-[#FFF1DC] dark:hover:bg-[#334155] border border-[#E7DEC8] dark:border-[#334155] disabled:opacity-35 disabled:cursor-not-allowed text-[#1E293B] dark:text-white text-xs font-black flex items-center justify-center gap-1 transition-colors`}
+          >
+            <Undo2 className="w-4 h-4" />
+            <span>تراجع</span>
+          </button>
+          <button
+            type="button"
+            aria-label="مسح اللوحة"
+            disabled={strokes.length === 0}
+            onClick={handleClear}
+            className={`${isFullscreen ? 'min-w-[38px] min-h-[34px] px-2.5' : 'min-w-[44px] min-h-[40px] px-3'} rounded-xl bg-[#FFF1F2] dark:bg-rose-950/60 hover:bg-[#FFE4E6] border border-[#FECDD3] dark:border-rose-800 disabled:opacity-35 disabled:cursor-not-allowed text-[#E11D48] dark:text-rose-300 text-xs font-black flex items-center justify-center gap-1 transition-colors`}
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>مسح</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (isFullscreen) {
+    return (
+      <div
+        dir="rtl"
+        className="fixed inset-0 z-50 flex flex-col bg-[#FFF9F0] dark:bg-[#0F172A] p-2.5 sm:p-4 gap-2 overflow-hidden"
+      >
+        <div className="w-full max-w-2xl mx-auto flex flex-col gap-2 shrink-0">
+          {fullscreenHeader}
+        </div>
+
+        <div
+          className="flex-1 min-h-0 w-full flex items-center justify-center"
+          style={{ containerType: 'size' }}
+        >
+          <div
+            style={{
+              width: 'min(100cqw, calc(100cqh * 5 / 6))',
+              height: 'min(100cqh, calc(100cqw * 6 / 5))',
+              touchAction: 'none',
+              overscrollBehavior: 'none',
+            }}
+            className={`relative rounded-3xl bg-white overflow-hidden shadow-xl border-4 transition-colors ${
+              locked ? 'border-[#F59E0B]' : 'border-[#E7DEC8] dark:border-[#334155]'
+            }`}
+          >
+            <canvas
+              ref={canvasRef}
+              width={LOGICAL_WIDTH}
+              height={LOGICAL_HEIGHT}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={finishActiveStroke}
+              onPointerCancel={finishActiveStroke}
+              onLostPointerCapture={finishActiveStroke}
+              className={`w-full h-full block ${locked ? 'cursor-default' : 'cursor-crosshair'}`}
+              style={{ touchAction: 'none' }}
+            />
+
+            {onToggleFullscreen && !locked && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundManager.play('click');
+                  onToggleFullscreen();
+                }}
+                className="absolute top-2.5 left-2.5 z-10 min-h-[34px] px-2.5 rounded-xl bg-[#1E293B]/90 hover:bg-[#0F172A] text-white text-xs font-black flex items-center gap-1.5 shadow-md"
+              >
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>تصغير مساحة الرسم</span>
+              </button>
+            )}
+
+            {locked && (
+              <div className="pointer-events-none absolute top-2.5 right-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B] px-2.5 py-1 text-[11px] font-black text-[#B45309]">
+                اللوحة مقفولة
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="w-full max-w-2xl mx-auto flex flex-col gap-2 shrink-0">
+          {toolbar}
+          {fullscreenFooter}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full flex flex-col gap-3">
+    <div className="w-full flex flex-col gap-3 items-center">
       {/* Bright white drawing board */}
       <div
-        className={`relative w-full aspect-[4/3] rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
+        className={`relative w-full max-w-[360px] aspect-[5/6] max-h-[46vh] mx-auto rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
           locked ? 'border-[#F59E0B]' : 'border-[#E7DEC8] dark:border-[#334155]'
         }`}
         style={{ touchAction: 'none', overscrollBehavior: 'none' }}
@@ -196,6 +351,20 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
           style={{ touchAction: 'none' }}
         />
 
+        {onToggleFullscreen && !locked && (
+          <button
+            type="button"
+            onClick={() => {
+              soundManager.play('click');
+              onToggleFullscreen();
+            }}
+            className="absolute top-2.5 left-2.5 z-10 min-h-[34px] px-2.5 rounded-xl bg-[#1E293B]/85 hover:bg-[#0F172A] text-white text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow-md"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            <span>توسيع مساحة الرسم</span>
+          </button>
+        )}
+
         {locked && (
           <div className="pointer-events-none absolute top-2.5 right-2.5 rounded-xl bg-[#FEF3C7] border border-[#F59E0B] px-2.5 py-1 text-[11px] font-black text-[#B45309]">
             اللوحة مقفولة
@@ -204,85 +373,7 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
       </div>
 
       {/* Compact bottom toolbar (hidden when locked) */}
-      {!locked && (
-        <div className="w-full rounded-2xl qada-card p-2.5 flex flex-col gap-2.5">
-          {/* Row 1: Color Swatches */}
-          <div className="flex items-center justify-between gap-1.5 flex-wrap">
-            {COLOR_SWATCHES.map((swatch) => {
-              const isActive = selectedColor === swatch.hex;
-              return (
-                <button
-                  key={swatch.id}
-                  type="button"
-                  aria-label={swatch.label}
-                  onClick={() => {
-                    soundManager.play('click');
-                    setSelectedColor(swatch.hex);
-                  }}
-                  className={`min-w-[36px] min-h-[36px] flex-1 max-w-[44px] rounded-xl flex items-center justify-center transition-transform ${
-                    isActive
-                      ? 'ring-2 ring-[#FF6B4A] ring-offset-2 ring-offset-white dark:ring-offset-[#1E293B] scale-105'
-                      : 'opacity-90 hover:opacity-100'
-                  } ${swatch.isEraser ? 'border-2 border-[#CBD5E1] text-[#1E293B]' : 'border border-black/15'}`}
-                  style={{ backgroundColor: swatch.hex }}
-                >
-                  {swatch.isEraser && <Eraser className="w-4 h-4" />}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Row 2: Brush sizes + Undo & Clear */}
-          <div className="flex items-center justify-between gap-2 pt-2 border-t border-[#F1E8DA] dark:border-[#334155]">
-            <div className="flex items-center gap-1.5">
-              {BRUSH_SIZES.map((b) => {
-                const isActive = brushSize === b.size;
-                return (
-                  <button
-                    key={b.id}
-                    type="button"
-                    aria-label={`حجم الفرشاة ${b.label}`}
-                    onClick={() => {
-                      soundManager.play('click');
-                      setBrushSize(b.size);
-                    }}
-                    className={`min-w-[44px] min-h-[40px] rounded-xl flex items-center justify-center transition-colors ${
-                      isActive
-                        ? 'bg-[#14B8A6] text-white shadow-sm'
-                        : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#1E293B] dark:hover:text-white'
-                    }`}
-                  >
-                    <span className={`${b.dotClass} rounded-full bg-current`} />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                aria-label="تراجع عن آخر خطوة"
-                disabled={strokes.length === 0}
-                onClick={handleUndo}
-                className="min-w-[48px] min-h-[40px] px-3 rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] hover:bg-[#FFF1DC] dark:hover:bg-[#334155] border border-[#E7DEC8] dark:border-[#334155] disabled:opacity-35 disabled:cursor-not-allowed text-[#1E293B] dark:text-white text-xs font-black flex items-center justify-center gap-1 transition-colors"
-              >
-                <Undo2 className="w-4 h-4" />
-                <span>تراجع</span>
-              </button>
-              <button
-                type="button"
-                aria-label="مسح اللوحة"
-                disabled={strokes.length === 0}
-                onClick={handleClear}
-                className="min-w-[44px] min-h-[40px] px-3 rounded-xl bg-[#FFF1F2] dark:bg-rose-950/60 hover:bg-[#FFE4E6] border border-[#FECDD3] dark:border-rose-800 disabled:opacity-35 disabled:cursor-not-allowed text-[#E11D48] dark:text-rose-300 text-xs font-black flex items-center justify-center gap-1 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>مسح</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {toolbar}
     </div>
   );
 };

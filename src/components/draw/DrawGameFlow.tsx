@@ -1,12 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Clock, Fingerprint, Palette, Pencil, X } from 'lucide-react';
-import { DRAW_WORDS } from '../../data/gameData';
+import { DRAW_CATEGORIES, DRAW_WORDS } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { DrawPhase, Player, RoundDelta } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { recordDrawWin } from '../../utils/sessionStats';
+import { getCustomContent } from '../../utils/customContentStorage';
 import { pickUnseenBatch } from '../../utils/usedItemsMemory';
+import { ActiveTurnBanner } from '../ActiveTurnBanner';
+import { CategoryFilterBar } from '../CategoryFilterBar';
 import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { PlayerAvatar } from '../PlayerAvatar';
@@ -17,6 +20,7 @@ interface DrawGameFlowProps {
   players: Player[];
   onApplyDeltas: (deltas: RoundDelta[]) => void;
   onExitToHub: () => void;
+  onTournamentFinish?: (deltas: RoundDelta[]) => void;
 }
 
 interface DrawTurn {
@@ -25,14 +29,19 @@ interface DrawTurn {
   word: string;
 }
 
-function buildCircularTurns(players: Player[]): DrawTurn[] {
+function buildCircularTurns(
+  players: Player[],
+  wordPool: string[],
+  bucketKey: string
+): DrawTurn[] {
+  const safePool = wordPool.length > 0 ? wordPool : DRAW_WORDS;
   const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
-  const pickedWords = pickUnseenBatch('draw', DRAW_WORDS, shuffledPlayers.length);
+  const pickedWords = pickUnseenBatch(bucketKey, safePool, shuffledPlayers.length);
 
   return shuffledPlayers.map((drawer, idx) => ({
     drawer,
     guesser: shuffledPlayers[(idx + 1) % shuffledPlayers.length],
-    word: pickedWords[idx % pickedWords.length] ?? DRAW_WORDS[idx % DRAW_WORDS.length],
+    word: pickedWords[idx % pickedWords.length] ?? safePool[idx % safePool.length],
   }));
 }
 
@@ -44,10 +53,12 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
   players,
   onApplyDeltas,
   onExitToHub,
+  onTournamentFinish,
 }) => {
   const guard = useTapGuard(400);
 
   const [phase, setPhase] = useState<DrawPhase>('READY');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [drawDuration, setDrawDuration] = useState<number>(DEFAULT_DRAW_SECONDS);
   const [turns, setTurns] = useState<DrawTurn[]>([]);
   const [turnIdx, setTurnIdx] = useState<number>(0);
@@ -59,8 +70,13 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
   // Canvas & timers
   const [strokes, setStrokes] = useState<DrawStroke[]>([]);
   const [drawSecondsLeft, setDrawSecondsLeft] = useState<number>(DEFAULT_DRAW_SECONDS);
+  const [drawRemainingMs, setDrawRemainingMs] = useState<number>(DEFAULT_DRAW_SECONDS * 1000);
   const [canvasLocked, setCanvasLocked] = useState<boolean>(false);
+  const [isCanvasFullscreen, setIsCanvasFullscreen] = useState<boolean>(false);
   const [guessSecondsLeft, setGuessSecondsLeft] = useState<number>(GUESS_SECONDS);
+
+  const drawStartTimeRef = useRef<number>(0);
+  const lastDrawSecRef = useRef<number>(DEFAULT_DRAW_SECONDS);
 
   // Turn & round scoring
   const [turnSucceeded, setTurnSucceeded] = useState<boolean>(false);
@@ -82,21 +98,37 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     setShowExitConfirm(true);
   });
 
-  // Drawing countdown timer using selected drawDuration (10-30s)
+  // High-precision drawing countdown timer with smooth bar + intense final 3 seconds
   useEffect(() => {
     if (phase !== 'DRAWING' || canvasLocked) return;
 
+    const totalMs = drawDuration * 1000;
+    drawStartTimeRef.current = performance.now();
+    lastDrawSecRef.current = drawDuration;
+
     const timer = window.setInterval(() => {
-      setDrawSecondsLeft((prev) => {
-        if (prev <= 1) {
+      const elapsed = performance.now() - drawStartTimeRef.current;
+      const remainingMs = Math.max(0, totalMs - elapsed);
+      setDrawRemainingMs(remainingMs);
+
+      const secs = Math.ceil(remainingMs / 1000);
+      if (secs !== lastDrawSecRef.current) {
+        lastDrawSecRef.current = secs;
+        setDrawSecondsLeft(secs);
+
+        if (secs <= 0) {
           soundManager.play('tickUrgent');
+          triggerHaptic(75);
           setCanvasLocked(true);
-          return 0;
+          setIsCanvasFullscreen(false);
+        } else if (secs <= 3) {
+          soundManager.play('heartbeat');
+          triggerHaptic(24);
+        } else {
+          soundManager.play('tick', (drawDuration - secs) / drawDuration);
         }
-        soundManager.play(prev <= 4 ? 'tickUrgent' : 'tick', (drawDuration - prev) / drawDuration);
-        return prev - 1;
-      });
-    }, 1000);
+      }
+    }, 50);
 
     return () => window.clearInterval(timer);
   }, [phase, canvasLocked, drawDuration]);
@@ -121,11 +153,44 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     return () => window.clearInterval(timer);
   }, [phase]);
 
+  const drawCategoryBank = useMemo(() => {
+    const custom = getCustomContent();
+    if (custom.words.length === 0) return DRAW_CATEGORIES;
+    const customCat = {
+      id: '__custom_draw_words__',
+      name: 'كلماتك الخاصة ✍️',
+      items: custom.words,
+    };
+    if (custom.mode === 'custom_only') return [customCat];
+    return [customCat, ...DRAW_CATEGORIES];
+  }, []);
+
+  const activeDrawCategories = useMemo(
+    () =>
+      selectedCategoryIds.length === 0
+        ? drawCategoryBank
+        : drawCategoryBank.filter((cat) => selectedCategoryIds.includes(cat.id)),
+    [drawCategoryBank, selectedCategoryIds]
+  );
+
+  const pooledDrawWords = useMemo(
+    () => Array.from(new Set(activeDrawCategories.flatMap((cat) => cat.items))),
+    [activeDrawCategories]
+  );
+
+  const drawBucketKey = useMemo(
+    () =>
+      selectedCategoryIds.length === 0
+        ? 'draw:all'
+        : `draw:${[...selectedCategoryIds].sort().join(',')}`,
+    [selectedCategoryIds]
+  );
+
   const startNewRound = guard(() => {
     soundManager.unlock();
     soundManager.play('next');
 
-    const newTurns = buildCircularTurns(players);
+    const newTurns = buildCircularTurns(players, pooledDrawWords, drawBucketKey);
     const initialScores: Record<string, number> = {};
     players.forEach((p) => {
       initialScores[p.id] = 0;
@@ -139,6 +204,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     setIsHoldingWord(false);
     setHasPeekedWord(false);
     setCanvasLocked(false);
+    setIsCanvasFullscreen(false);
     setPhase('PASS_DRAWER');
   });
 
@@ -156,13 +222,16 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     setHasPeekedWord(false);
     setStrokes([]);
     setDrawSecondsLeft(clampedDuration);
+    setDrawRemainingMs(clampedDuration * 1000);
     setCanvasLocked(false);
+    setIsCanvasFullscreen(false);
     soundManager.play('next');
     setPhase('DRAWING');
   });
 
   const handleMoveToGuessing = guard(() => {
     setCanvasLocked(true);
+    setIsCanvasFullscreen(false);
     setGuessSecondsLeft(GUESS_SECONDS);
     soundManager.play('next');
     setPhase('GUESSING');
@@ -196,6 +265,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
       setIsHoldingWord(false);
       setHasPeekedWord(false);
       setCanvasLocked(false);
+      setIsCanvasFullscreen(false);
       setPhase('PASS_DRAWER');
     } else {
       const deltas: RoundDelta[] = players.map((p) => ({
@@ -284,6 +354,21 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
               </div>
             </div>
 
+            <div className="w-full max-w-md mb-6">
+              <CategoryFilterBar
+                categories={DRAW_CATEGORIES.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  count: c.items.length,
+                }))}
+                selectedIds={selectedCategoryIds}
+                onChange={setSelectedCategoryIds}
+                totalAvailable={pooledDrawWords.length}
+                unitLabel="كلمة"
+                accentColor="teal"
+              />
+            </div>
+
             <button
               type="button"
               onClick={startNewRound}
@@ -296,13 +381,16 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
 
         {/* PHASE 2: PASS TO DRAWER (ANTI-PEEK COVER) */}
         {phase === 'PASS_DRAWER' && currentTurn && (
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            <div className="mb-4 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
-              <span>
-                الدور {turnIdx + 1} من {turns.length}
-              </span>
-              <span>·</span>
-              <span className="text-[#1E293B] dark:text-white">المخمن: {currentTurn.guesser.name}</span>
+          <div className="flex-1 flex flex-col items-center justify-center py-4">
+            <ActiveTurnBanner
+              label="الدور الجاي على:"
+              player={currentTurn.drawer}
+              badgeText={`دور ${turnIdx + 1} من ${turns.length}`}
+              accent="coral"
+            />
+
+            <div className="mb-3 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
+              <span>المخمن: <span className="text-[#1E293B] dark:text-white">{currentTurn.guesser.name}</span></span>
             </div>
 
             <div className="relative w-full max-w-md rounded-3xl qada-card px-6 py-11 text-center mb-8">
@@ -334,8 +422,15 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
 
         {/* PHASE 3: ANTI-PEEK WORD REVEAL */}
         {phase === 'REVEAL_WORD' && currentTurn && (
-          <div className="flex-1 flex flex-col items-center justify-center py-4 no-select">
-            <div className="flex items-center gap-3 mb-5">
+          <div className="flex-1 flex flex-col items-center justify-center py-2 no-select">
+            <ActiveTurnBanner
+              label="اللي بيشوف الكلمة دلوقتي:"
+              player={currentTurn.drawer}
+              badgeText={`هترسم لـ ${currentTurn.guesser.name}`}
+              accent="teal"
+            />
+
+            <div className="flex items-center gap-3 mb-4">
               <PlayerAvatar
                 avatarId={currentTurn.drawer.avatarId}
                 name={currentTurn.drawer.name}
@@ -424,11 +519,19 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
         )}
 
         {/* PHASE 4: 10-SECOND DRAWING CANVAS */}
-        {phase === 'DRAWING' && currentTurn && (
-          <div className="flex-1 flex flex-col gap-3">
-            {/* Prominent countdown bar */}
-            <div className="w-full rounded-2xl qada-card px-4 py-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
+        {phase === 'DRAWING' && currentTurn && (() => {
+          const isDangerZone = !canvasLocked && drawSecondsLeft <= 3 && drawSecondsLeft > 0;
+          const pct = Math.max(0, Math.min(100, (drawRemainingMs / (drawDuration * 1000)) * 100));
+
+          const timerCard = (
+            <div
+              className={`w-full rounded-2xl qada-card px-3.5 py-2.5 transition-all ${
+                isDangerZone
+                  ? 'border-[#F43F5E] ring-4 ring-rose-500/35 bg-[#FFF1F2] dark:bg-rose-950/60'
+                  : ''
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] shrink-0">ارسم:</span>
                   <span className="text-base sm:text-lg font-black text-[#0D9488] dark:text-[#2DD4BF] truncate">
@@ -438,7 +541,11 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
 
                 <div
                   className={`flex items-center gap-1.5 text-xl font-black tabular-nums shrink-0 ${
-                    drawSecondsLeft <= 3 ? 'text-[#E11D48] dark:text-rose-400' : 'text-[#1E293B] dark:text-white'
+                    isDangerZone
+                      ? 'text-[#E11D48] dark:text-rose-400 animate-heartbeat-pulse'
+                      : drawSecondsLeft === 0
+                        ? 'text-[#E11D48] dark:text-rose-400'
+                        : 'text-[#1E293B] dark:text-white'
                   }`}
                 >
                   <Clock className="w-5 h-5" />
@@ -448,67 +555,105 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
 
               <div className="w-full h-3 rounded-full bg-[#F1E8DA] dark:bg-[#0F172A] overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${
+                  className={`h-full rounded-full transition-colors duration-200 ${
                     drawSecondsLeft <= 3
-                      ? 'bg-[#F43F5E]'
-                      : drawSecondsLeft <= 6
+                      ? 'bg-[#F43F5E] animate-pulse shadow-[0_0_12px_rgba(244,63,94,0.85)]'
+                      : drawSecondsLeft <= Math.ceil(drawDuration * 0.6)
                         ? 'bg-[#F59E0B]'
                         : 'bg-[#10B981]'
                   }`}
-                  style={{ width: `${(drawSecondsLeft / drawDuration) * 100}%` }}
+                  style={{ width: `${pct}%` }}
                 />
               </div>
             </div>
+          );
 
-            <DrawingCanvas
-              locked={canvasLocked}
-              strokes={strokes}
-              onStrokesChange={setStrokes}
+          const pinnedDrawerBanner = (
+            <ActiveTurnBanner
+              label="اللي بيرسم دلوقتي:"
+              player={currentTurn.drawer}
+              badgeText={`المخمن: ${currentTurn.guesser.name}`}
+              accent="teal"
+              sticky={!isCanvasFullscreen}
             />
+          );
 
-            {canvasLocked ? (
-              <div className="mt-1 flex flex-col items-center gap-2">
-                <div className="text-sm font-black text-[#B45309] dark:text-amber-300 tabular-nums">
-                  خلصت الـ {drawDuration} ثانية! اتقفلت اللوحة.
+          return (
+            <div className="relative flex-1 flex flex-col gap-2.5">
+              {isDangerZone && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none fixed inset-0 z-40 shadow-[inset_0_0_85px_24px_rgba(244,63,94,0.48)] animate-danger-vignette"
+                />
+              )}
+
+              {!isCanvasFullscreen && pinnedDrawerBanner}
+              {!isCanvasFullscreen && timerCard}
+
+              <DrawingCanvas
+                locked={canvasLocked}
+                strokes={strokes}
+                onStrokesChange={setStrokes}
+                isFullscreen={isCanvasFullscreen}
+                onToggleFullscreen={() => setIsCanvasFullscreen((prev) => !prev)}
+                fullscreenHeader={
+                  <div className="flex flex-col gap-1.5">
+                    {pinnedDrawerBanner}
+                    {timerCard}
+                  </div>
+                }
+                fullscreenFooter={
+                  <button
+                    type="button"
+                    onClick={handleMoveToGuessing}
+                    className="w-full min-h-[42px] rounded-xl bg-[#10B981] hover:bg-[#059669] text-white text-sm font-black shadow-md transition-colors"
+                  >
+                    خلصت رسم — مرر لـ {currentTurn.guesser.name}
+                  </button>
+                }
+              />
+
+              {canvasLocked ? (
+                <div className="mt-1 flex flex-col items-center gap-2">
+                  <div className="text-sm font-black text-[#B45309] dark:text-amber-300 tabular-nums">
+                    خلصت الـ {drawDuration} ثانية! اتقفلت اللوحة.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleMoveToGuessing}
+                    className="w-full max-w-[290px] min-h-[54px] rounded-2xl bakasa-btn-green text-white text-lg font-black tracking-wide transition-transform"
+                  >
+                    مرر لـ {currentTurn.guesser.name} للتخمين
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleMoveToGuessing}
-                  className="w-full max-w-[290px] min-h-[54px] rounded-2xl bakasa-btn-green text-white text-lg font-black tracking-wide transition-transform"
-                >
-                  مرر لـ {currentTurn.guesser.name} للتخمين
-                </button>
-              </div>
-            ) : (
-              <div className="flex justify-center pt-1">
-                <button
-                  type="button"
-                  onClick={handleMoveToGuessing}
-                  className="min-h-[42px] px-5 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs sm:text-sm font-extrabold text-[#1E293B] dark:text-white transition-colors"
-                >
-                  خلصت رسم — مرر للمخمن
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              ) : (
+                <div className="flex justify-center pt-0.5">
+                  <button
+                    type="button"
+                    onClick={handleMoveToGuessing}
+                    className="min-h-[42px] px-5 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs sm:text-sm font-extrabold text-[#1E293B] dark:text-white transition-colors"
+                  >
+                    خلصت رسم — مرر للمخمن
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* PHASE 5: PASS & GUESS (15-SECOND COUNTDOWN) */}
         {phase === 'GUESSING' && currentTurn && (
-          <div className="flex-1 flex flex-col gap-3.5">
-            <div className="w-full rounded-2xl qada-card px-4 py-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <PlayerAvatar
-                  avatarId={currentTurn.guesser.avatarId}
-                  name={currentTurn.guesser.name}
-                  size="sm"
-                />
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">التخمين</div>
-                  <div className="text-sm sm:text-base font-black text-[#1E293B] dark:text-white truncate">
-                    مرر الموبايل للمخمن ({currentTurn.guesser.name})
-                  </div>
-                </div>
+          <div className="flex-1 flex flex-col gap-3">
+            <ActiveTurnBanner
+              label="اللي بيخمن دلوقتي:"
+              player={currentTurn.guesser}
+              badgeText={`رسمة: ${currentTurn.drawer.name}`}
+              accent="coral"
+            />
+
+            <div className="w-full rounded-2xl qada-card px-4 py-2.5 flex items-center justify-between gap-3">
+              <div className="text-sm sm:text-base font-black text-[#1E293B] dark:text-white truncate">
+                خمن الرسمة بسرعة يا {currentTurn.guesser.name}!
               </div>
 
               <div
@@ -516,7 +661,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
                   guessSecondsLeft === 0
                     ? 'bg-[#FFF1F2] dark:bg-rose-950/60 text-[#E11D48] dark:text-rose-300 border-[#FECDD3] dark:border-rose-800'
                     : guessSecondsLeft <= 5
-                      ? 'bg-[#FFFBEB] dark:bg-amber-950/60 text-[#D97706] dark:text-amber-300 border-[#FDE68A] dark:border-amber-800'
+                      ? 'bg-[#FFFBEB] dark:bg-amber-950/60 text-[#D97706] dark:text-amber-300 border-[#FDE68A] dark:border-amber-800 animate-pulse'
                       : 'bg-[#FFF9F0] dark:bg-[#0F172A] text-[#1E293B] dark:text-white border-[#E7DEC8] dark:border-[#334155]'
                 }`}
               >
@@ -552,7 +697,11 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
         {/* PHASE 6: TURN RESULT REVEAL */}
         {phase === 'TURN_RESULT' && currentTurn && (
           <div className="flex-1 flex flex-col items-center justify-center py-6 text-center">
-            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6">
+            <div
+              className={`w-full max-w-md rounded-3xl qada-card p-6 mb-6 ${
+                turnSucceeded ? 'animate-reveal-3s' : ''
+              }`}
+            >
               <div
                 className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center ${
                   turnSucceeded
@@ -594,8 +743,15 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
             players={players}
             deltas={roundDeltas}
             summaryHeadline="انتهت جولة الرسم السريع!"
+            isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={startNewRound}
-            onFinishGame={onExitToHub}
+            onFinishGame={() => {
+              if (onTournamentFinish) {
+                onTournamentFinish(roundDeltas);
+              } else {
+                onExitToHub();
+              }
+            }}
           />
         )}
       </main>

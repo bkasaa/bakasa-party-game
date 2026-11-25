@@ -3,7 +3,13 @@ import { ArrowLeft, Goal, Timer, Trophy } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useArcadeTouchLock } from '../../hooks/useArcadeTouchLock';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
-import { ARCADE_COLORS, ArcadeDelta, ArcadePlayer, CornerSlot } from '../../types/arcade';
+import {
+  ARCADE_COLORS,
+  ArcadeDelta,
+  ArcadePlayer,
+  CornerSlot,
+  getCornerPlacements,
+} from '../../types/arcade';
 import { recordArcadeWin, recordSoccerGoal } from '../../utils/sessionStats';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { ConfirmModal } from '../ConfirmModal';
@@ -11,7 +17,6 @@ import { HomeLogoBadge } from '../HomeLogoBadge';
 import { ArcadeFloatingHud } from './ArcadeFloatingHud';
 import { ArcadeLeaderboardScreen } from './ArcadeLeaderboardScreen';
 import { ArcadePreGameSetup } from './ArcadePreGameSetup';
-import { ArcadeSeriesOverlay } from './ArcadeSeriesOverlay';
 import { ArcadeWinnerSpotlight } from './ArcadeWinnerSpotlight';
 
 interface SoccerGameProps {
@@ -24,7 +29,6 @@ type MatchPhase =
   | 'SETUP'
   | 'COUNTDOWN'
   | 'PLAYING'
-  | 'INTER_ROUND'
   | 'WINNER_SPOTLIGHT'
   | 'LEADERBOARD';
 type SoccerWinMode = 'goals' | 'time';
@@ -38,7 +42,7 @@ interface StadiumSpectator {
 
 interface SoccerPlayerEntity {
   playerIdx: number;
-  teamIdx: 0 | 1; // 0 = فريق 1 (تحت) | 1 = فريق 2 (فوق)
+  teamIdx: 0 | 1; // 0 = فريق اليسار | 1 = فريق اليمين
   slot: CornerSlot;
   isTop: boolean;
   name: string;
@@ -46,6 +50,8 @@ interface SoccerPlayerEntity {
   darkHex: string;
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   angle: number;
   slideUntil: number;
   slideVx: number;
@@ -96,7 +102,7 @@ interface PitchBounds {
   top: number;
   bottom: number;
   goalDepth: number;
-  goalHalfW: number;
+  goalHalfH: number;
 }
 
 const JOYSTICK_MAX_R = 26;
@@ -107,8 +113,8 @@ const RUN_SPEED = 195;
 const SLIDE_SPEED = 465;
 
 const TEAM_COLORS = {
-  0: { name: 'فريق 1 (تحت)', ringHex: '#ef4444', badgeBg: 'rgba(239, 68, 68, 0.88)' },
-  1: { name: 'فريق 2 (فوق)', ringHex: '#38bdf8', badgeBg: 'rgba(14, 165, 233, 0.88)' },
+  0: { name: 'فريق اليسار', ringHex: '#38bdf8', badgeBg: 'rgba(14, 165, 233, 0.88)' },
+  1: { name: 'فريق اليمين', ringHex: '#ef4444', badgeBg: 'rgba(239, 68, 68, 0.88)' },
 } as const;
 
 const SLOT_QUADRANT_POS: Record<CornerSlot, string> = {
@@ -125,41 +131,19 @@ const SLOT_REST_ANCHOR: Record<CornerSlot, string> = {
   'bottom-right': 'bottom-3 right-3',
 };
 
-function getSoccerCornerSlots(count: number): Array<{ slot: CornerSlot; isTop: boolean; teamIdx: 0 | 1 }> {
-  if (count === 2) {
-    return [
-      { slot: 'bottom-left', isTop: false, teamIdx: 0 }, // Player 1: Bottom Team
-      { slot: 'top-right', isTop: true, teamIdx: 1 }, // Player 2: Top Team
-    ];
-  }
-  if (count === 3) {
-    return [
-      { slot: 'bottom-left', isTop: false, teamIdx: 0 }, // Player 1: Bottom Team
-      { slot: 'bottom-right', isTop: false, teamIdx: 0 }, // Player 2: Bottom Team
-      { slot: 'top-right', isTop: true, teamIdx: 1 }, // Player 3: Top Team
-    ];
-  }
-  // 4 Players: Bottom Team (P1 Bottom-Left + P2 Bottom-Right) vs Top Team (P3 Top-Right + P4 Top-Left)
-  return [
-    { slot: 'bottom-left', isTop: false, teamIdx: 0 },
-    { slot: 'bottom-right', isTop: false, teamIdx: 0 },
-    { slot: 'top-right', isTop: true, teamIdx: 1 },
-    { slot: 'top-left', isTop: true, teamIdx: 1 },
-  ];
-}
-
 function getPitchBounds(w: number, h: number): PitchBounds {
-  const padX = Math.max(22, Math.min(34, w * 0.065));
-  const padY = Math.max(76, Math.min(98, h * 0.125));
-  const pitchW = w - padX * 2;
+  const goalDepth = Math.max(22, Math.min(28, w * 0.036));
+  const padX = goalDepth + 12;
+  const padY = Math.max(32, Math.min(54, h * 0.095));
+  const pitchH = Math.max(180, h - padY * 2);
   return {
     left: padX,
     right: w - padX,
     top: padY,
     bottom: h - padY,
-    goalDepth: 22,
-    // Narrow goal width: 23% of pitch width (halfW = 0.115 * pitchW)
-    goalHalfW: Math.max(30, pitchW * 0.115),
+    goalDepth,
+    // Goal mouth centered vertically on LEFT & RIGHT edges (25% narrower for higher skill)
+    goalHalfH: Math.max(27, Math.min(57, pitchH * 0.1275)),
   };
 }
 
@@ -167,7 +151,8 @@ function drawSoccerPlayer(
   ctx: CanvasRenderingContext2D,
   p: SoccerPlayerEntity,
   hasBall: boolean,
-  now: number
+  now: number,
+  teamRingHex: string
 ) {
   const isSliding = p.slideUntil > now;
   const stunned = p.grabCooldownUntil > now && !hasBall;
@@ -176,8 +161,8 @@ function drawSoccerPlayer(
   ctx.translate(p.x, p.y);
   ctx.rotate(p.angle);
 
-  // Matching Team Ring (Team 1 Bottom = Red, Team 2 Top = Sky Blue)
-  ctx.strokeStyle = TEAM_COLORS[p.teamIdx].ringHex;
+  // Matching Team Ring
+  ctx.strokeStyle = teamRingHex;
   ctx.lineWidth = 3.2;
   ctx.beginPath();
   ctx.arc(0, 0, PLAYER_R + 5, 0, Math.PI * 2);
@@ -275,10 +260,10 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
   const [countdownNum, setCountdownNum] = useState<number>(3);
   const [secondsLeft, setSecondsLeft] = useState<number>(90);
   const [scores, setScores] = useState<[number, number]>([0, 0]);
+  const [roundWins, setRoundWins] = useState<[number, number]>([0, 0]);
   const [joyVisuals, setJoyVisuals] = useState<
     Array<{ kx: number; ky: number; active: boolean; x: number | null; y: number | null }>
   >(() => players.map(() => ({ kx: 0, ky: 0, active: false, x: null, y: null })));
-  const [roundDeltas, setRoundDeltas] = useState<ArcadeDelta[]>([]);
   const [finalSeriesDeltas, setFinalSeriesDeltas] = useState<ArcadeDelta[]>([]);
   const [seriesWinners, setSeriesWinners] = useState<ArcadePlayer[]>([]);
   const [summaryText, setSummaryText] = useState<string>('');
@@ -303,13 +288,14 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     spin: 0,
   });
   const scoresRef = useRef<[number, number]>([0, 0]);
+  const roundWinsRef = useRef<[number, number]>([0, 0]);
   const skidsRef = useRef<SkidParticle[]>([]);
   const popupsRef = useRef<FloatingPopup[]>([]);
   const goalPauseUntilRef = useRef<number>(0);
   const goalCelebrateUntilRef = useRef<number>(0);
   const goalTimeoutRef = useRef<number | null>(null);
   const joyPointersRef = useRef<
-    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number }>
+    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number; rect: DOMRect }>
   >(new Map());
   const joysRef = useRef<JoystickState[]>(
     players.map(() => ({
@@ -323,16 +309,27 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       lastValidPull: 0,
     }))
   );
+  const lastJoyHapticRef = useRef<Array<{ angle: number; time: number }>>(
+    players.map(() => ({ angle: 0, time: 0 }))
+  );
   const roundStartRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
   const lastTickSecRef = useRef<number>(90);
   const lastWallSoundTimeRef = useRef<number>(0);
   const finishedRef = useRef<boolean>(false);
 
-  const cornerDefs = getSoccerCornerSlots(players.length);
+  const cornerDefs = getCornerPlacements(players.length).map((placement) => ({
+    ...placement,
+    // Left-side corners (top-left & bottom-left) = Team 0 (Left); Right-side corners (top-right & bottom-right) = Team 1 (Right)
+    teamIdx: (placement.slot.includes('left') ? 0 : 1) as 0 | 1,
+  }));
+  const leftLeadIdx = cornerDefs.findIndex((d) => d.teamIdx === 0);
+  const rightLeadIdx = cornerDefs.findIndex((d) => d.teamIdx === 1);
+  const leftTeamTheme = ARCADE_COLORS[players[leftLeadIdx >= 0 ? leftLeadIdx : 1]?.colorId ?? 'blue'];
+  const rightTeamTheme = ARCADE_COLORS[players[rightLeadIdx >= 0 ? rightLeadIdx : 0]?.colorId ?? 'red'];
   const effectiveDuration = winMode === 'goals' ? 180 : matchSeconds;
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -363,7 +360,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     if (!el) return;
     arenaSizeRef.current = {
       w: Math.max(300, Math.round(el.clientWidth)),
-      h: Math.max(420, Math.round(el.clientHeight)),
+      h: Math.max(300, Math.round(el.clientHeight)),
     };
   }, []);
 
@@ -375,26 +372,30 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     const pitchW = pb.right - pb.left;
     const pitchH = pb.bottom - pb.top;
 
-    const team0 = entitiesRef.current.filter((e) => e.teamIdx === 0);
-    const team1 = entitiesRef.current.filter((e) => e.teamIdx === 1);
+    const team0 = entitiesRef.current.filter((e) => e.teamIdx === 0); // Left Team
+    const team1 = entitiesRef.current.filter((e) => e.teamIdx === 1); // Right Team
 
-    team0.forEach((ent, i) => {
-      const spreadX =
-        team0.length === 1 ? 0 : (i === 0 ? -1 : 1) * (pitchW * 0.22);
-      ent.x = cx + spreadX;
-      ent.y = cy + pitchH * 0.22;
-      ent.angle = -Math.PI / 2; // Facing UP toward Top Goal
+    team0.forEach((ent) => {
+      const spreadY =
+        team0.length === 1 ? 0 : (ent.slot.includes('top') ? -1 : 1) * (pitchH * 0.22);
+      ent.x = cx - pitchW * 0.22;
+      ent.y = cy + spreadY;
+      ent.vx = 0;
+      ent.vy = 0;
+      ent.angle = 0; // Facing RIGHT toward Right Goal
       ent.slideUntil = 0;
       ent.tackleCooldownUntil = 0;
       ent.grabCooldownUntil = 0;
     });
 
-    team1.forEach((ent, i) => {
-      const spreadX =
-        team1.length === 1 ? 0 : (i === 0 ? 1 : -1) * (pitchW * 0.22);
-      ent.x = cx + spreadX;
-      ent.y = cy - pitchH * 0.22;
-      ent.angle = Math.PI / 2; // Facing DOWN toward Bottom Goal
+    team1.forEach((ent) => {
+      const spreadY =
+        team1.length === 1 ? 0 : (ent.slot.includes('top') ? -1 : 1) * (pitchH * 0.22);
+      ent.x = cx + pitchW * 0.22;
+      ent.y = cy + spreadY;
+      ent.vx = 0;
+      ent.vy = 0;
+      ent.angle = Math.PI; // Facing LEFT toward Left Goal
       ent.slideUntil = 0;
       ent.tackleCooldownUntil = 0;
       ent.grabCooldownUntil = 0;
@@ -413,21 +414,23 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
   const resetMatchState = useCallback(() => {
     syncArenaSize();
-    const defs = getSoccerCornerSlots(players.length);
+    const defs = getCornerPlacements(players.length);
 
     entitiesRef.current = players.map((p, idx) => {
       const theme = ARCADE_COLORS[p.colorId];
-      const def = defs[idx];
+      const placement = defs[idx];
       return {
         playerIdx: idx,
-        teamIdx: def.teamIdx,
-        slot: def.slot,
-        isTop: def.isTop,
+        teamIdx: (placement.slot.includes('left') ? 0 : 1) as 0 | 1,
+        slot: placement.slot,
+        isTop: placement.isTop,
         name: p.name,
         hex: theme.hex,
         darkHex: theme.darkHex,
         x: 0,
         y: 0,
+        vx: 0,
+        vy: 0,
         angle: 0,
         slideUntil: 0,
         slideVx: 0,
@@ -442,22 +445,22 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     const pb = getPitchBounds(w, h);
     const crowdColors = ['#ef4444', '#38bdf8', '#facc15', '#10b981', '#ffffff', '#f97316'];
     const specs: StadiumSpectator[] = [];
-    const usableTop = pb.top + 64;
-    const usableBottom = pb.bottom - 64;
-    const rows = Math.max(6, Math.floor((usableBottom - usableTop) / 26));
-    for (let r = 0; r < rows; r++) {
-      const sy = usableTop + ((r + 0.5) * (usableBottom - usableTop)) / rows;
+    const usableLeft = pb.left + 84;
+    const usableRight = pb.right - 84;
+    const cols = Math.max(6, Math.floor((usableRight - usableLeft) / 34));
+    for (let c = 0; c < cols; c++) {
+      const sx = usableLeft + ((c + 0.5) * (usableRight - usableLeft)) / cols;
       specs.push({
-        x: Math.max(8, pb.left * 0.45),
-        y: sy,
-        color: crowdColors[r % crowdColors.length],
-        seed: r * 0.9,
+        x: sx,
+        y: Math.max(10, pb.top * 0.45),
+        color: crowdColors[c % crowdColors.length],
+        seed: c * 0.9,
       });
       specs.push({
-        x: Math.min(w - 8, w - pb.left * 0.45),
-        y: sy + 6,
-        color: crowdColors[(r + 3) % crowdColors.length],
-        seed: r * 1.3 + 2,
+        x: sx + 6,
+        y: Math.min(h - 10, pb.bottom + (h - pb.bottom) * 0.55),
+        color: crowdColors[(c + 3) % crowdColors.length],
+        seed: c * 1.3 + 2,
       });
     }
     spectatorsRef.current = specs;
@@ -474,16 +477,19 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     popupsRef.current = [];
     goalPauseUntilRef.current = 0;
     joyPointersRef.current.clear();
-    joysRef.current = players.map(() => ({
-      dx: 0,
-      dy: 0,
-      kx: 0,
-      ky: 0,
-      active: false,
-      lastValidDx: 0,
-      lastValidDy: -1,
-      lastValidPull: 0,
-    }));
+    joysRef.current = players.map((_, idx) => {
+      const isLeft = defs[idx]?.slot.includes('left');
+      return {
+        dx: 0,
+        dy: 0,
+        kx: 0,
+        ky: 0,
+        active: false,
+        lastValidDx: isLeft ? 1 : -1,
+        lastValidDy: 0,
+        lastValidPull: 0,
+      };
+    });
     lastWallSoundTimeRef.current = 0;
     finishedRef.current = false;
     setJoyVisuals(players.map(() => ({ kx: 0, ky: 0, active: false, x: null, y: null })));
@@ -501,30 +507,22 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       if (sc[1] === best) winningTeams.add(1);
     }
 
+    if (sc[0] > sc[1]) {
+      roundWinsRef.current = [roundWinsRef.current[0] + 1, roundWinsRef.current[1]];
+    } else if (sc[1] > sc[0]) {
+      roundWinsRef.current = [roundWinsRef.current[0], roundWinsRef.current[1] + 1];
+    }
+    setRoundWins([...roundWinsRef.current]);
+
     const winnerPlayers = entitiesRef.current.filter((e) => winningTeams.has(e.teamIdx));
     const winnerIds = new Set(winnerPlayers.map((e) => players[e.playerIdx].id));
     winnerIds.forEach((id) => recordArcadeWin(id));
-
-    let roundHeadline = `انتهت الجولة ${currentRound}!`;
-    if (winningTeams.size > 1) {
-      roundHeadline = `تعادل (${best} - ${best})!`;
-    } else if (winningTeams.size === 1) {
-      const teamWinIdx = Array.from(winningTeams)[0] as 0 | 1;
-      if (players.length === 2 && winnerPlayers.length === 1) {
-        roundHeadline = `فاز ${winnerPlayers[0].name} (${sc[teamWinIdx]} أهداف)! ⚽`;
-      } else {
-        roundHeadline = `فاز ${TEAM_COLORS[teamWinIdx].name} (${sc[0]} : ${sc[1]})! ⚽`;
-      }
-    } else {
-      roundHeadline = 'انتهت بالتعادل السلبي!';
-    }
 
     const deltas: ArcadeDelta[] = players.map((p) => ({
       playerId: p.id,
       delta: winnerIds.has(p.id) ? 100 : 0,
     }));
 
-    setRoundDeltas(deltas);
     onApplyDeltas(deltas);
 
     const nextSeriesScores: Record<string, number> = { ...seriesScores };
@@ -535,8 +533,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
     if (currentRound < totalRounds) {
       soundManager.play('victory');
-      setSummaryText(roundHeadline);
-      setPhase('INTER_ROUND');
+      setCurrentRound((prev) => prev + 1);
+      setPhase('COUNTDOWN');
     } else {
       const topSeries = Math.max(...players.map((p) => nextSeriesScores[p.id] ?? 0), 0);
       const champs = players.filter((p) => (nextSeriesScores[p.id] ?? 0) === topSeries && topSeries > 0);
@@ -602,12 +600,12 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         ctx.stroke();
       }
 
-      // Horizontal mowed grass stripes for vertical portrait pitch
+      // Vertical mowed grass stripes for horizontal pitch
       const stripeCount = 12;
-      const stripeH = pitchH / stripeCount;
+      const stripeW = pitchW / stripeCount;
       for (let s = 0; s < stripeCount; s++) {
         ctx.fillStyle = s % 2 === 0 ? '#1ea346' : '#188f3b';
-        ctx.fillRect(pb.left, pb.top + s * stripeH, pitchW, stripeH + 0.6);
+        ctx.fillRect(pb.left + s * stripeW, pb.top, stripeW + 0.6, pitchH);
       }
 
       // White pitch boundary lines
@@ -615,14 +613,14 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       ctx.lineWidth = 3;
       ctx.strokeRect(pb.left, pb.top, pitchW, pitchH);
 
-      // Horizontal halfway line across the middle + center circle
+      // Vertical halfway line down the middle + center circle
       ctx.beginPath();
-      ctx.moveTo(pb.left, cy);
-      ctx.lineTo(pb.right, cy);
+      ctx.moveTo(cx, pb.top);
+      ctx.lineTo(cx, pb.bottom);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(cx, cy, Math.min(pitchW, pitchH) * 0.165, 0, Math.PI * 2);
+      ctx.arc(cx, cy, Math.min(pitchW, pitchH) * 0.175, 0, Math.PI * 2);
       ctx.stroke();
 
       ctx.fillStyle = '#ffffff';
@@ -630,11 +628,11 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       ctx.arc(cx, cy, 4, 0, Math.PI * 2);
       ctx.fill();
 
-      // Top & Bottom Penalty Boxes
-      const boxW = Math.min(pitchW * 0.56, pb.goalHalfW * 3.1);
-      const boxH = pitchH * 0.12;
-      ctx.strokeRect(cx - boxW / 2, pb.top, boxW, boxH);
-      ctx.strokeRect(cx - boxW / 2, pb.bottom - boxH, boxW, boxH);
+      // Left & Right Penalty Boxes
+      const boxW = Math.min(pitchW * 0.14, 96);
+      const boxH = Math.min(pitchH * 0.56, pb.goalHalfH * 2.55);
+      ctx.strokeRect(pb.left, cy - boxH / 2, boxW, boxH);
+      ctx.strokeRect(pb.right - boxW, cy - boxH / 2, boxW, boxH);
 
       const drawGoalCage = (
         gx: number,
@@ -642,7 +640,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         gw: number,
         gh: number,
         accent: string,
-        postY: number
+        postX: number
       ) => {
         ctx.fillStyle = 'rgba(255,255,255,0.16)';
         ctx.fillRect(gx, gy, gw, gh);
@@ -664,36 +662,36 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         ctx.lineWidth = 4;
         ctx.strokeRect(gx, gy, gw, gh);
 
-        // Solid Goalposts on both sides of the goal mouth
+        // Solid Goalposts on top & bottom edges of the vertical goal mouth
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#111827';
         ctx.lineWidth = 2.4;
-        for (const px of [gx, gx + gw]) {
+        for (const py of [gy, gy + gh]) {
           ctx.beginPath();
-          ctx.arc(px, postY, POST_R, 0, Math.PI * 2);
+          ctx.arc(postX, py, POST_R, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
         }
       };
 
-      // TOP GOAL (Defended by Team 2 Top = Sky Blue)
+      // LEFT GOAL (Defended by Left Team / Team 0)
       drawGoalCage(
-        cx - pb.goalHalfW,
-        pb.top - pb.goalDepth,
-        pb.goalHalfW * 2,
+        pb.left - pb.goalDepth,
+        cy - pb.goalHalfH,
         pb.goalDepth,
-        TEAM_COLORS[1].ringHex,
-        pb.top
+        pb.goalHalfH * 2,
+        leftTeamTheme.hex,
+        pb.left
       );
 
-      // BOTTOM GOAL (Defended by Team 1 Bottom = Red)
+      // RIGHT GOAL (Defended by Right Team / Team 1)
       drawGoalCage(
-        cx - pb.goalHalfW,
-        pb.bottom,
-        pb.goalHalfW * 2,
+        pb.right,
+        cy - pb.goalHalfH,
         pb.goalDepth,
-        TEAM_COLORS[0].ringHex,
-        pb.bottom
+        pb.goalHalfH * 2,
+        rightTeamTheme.hex,
+        pb.right
       );
 
       // Slide skid particles
@@ -709,7 +707,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
       const ball = ballRef.current;
 
-      // Shorter (~50% length) Directional Aim Arrow when possessor aims with joystick
+      // Directional Aim Arrow when possessor aims with joystick
       if (ball.possessorIdx !== null) {
         const joy = joysRef.current[ball.possessorIdx];
         if (joy && joy.active && joy.lastValidPull > 0.14) {
@@ -742,7 +740,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
       // Players
       for (const p of entitiesRef.current) {
-        drawSoccerPlayer(ctx, p, ball.possessorIdx === p.playerIdx, now);
+        const ringHex = p.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex;
+        drawSoccerPlayer(ctx, p, ball.possessorIdx === p.playerIdx, now, ringHex);
       }
 
       // Ball
@@ -764,8 +763,25 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
       ctx.restore();
     },
-    []
+    [leftTeamTheme.hex, rightTeamTheme.hex]
   );
+
+  useEffect(() => {
+    if (!isRoundActive) return;
+    const handleResize = () => {
+      syncArenaSize();
+      if (phase === 'COUNTDOWN') {
+        placeKickoffPositions();
+        drawScene(performance.now());
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, syncArenaSize, placeKickoffPositions, drawScene]);
 
   // Countdown sequence
   useEffect(() => {
@@ -800,16 +816,6 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     };
   }, [phase, effectiveDuration, resetMatchState, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round banner
-  useEffect(() => {
-    if (phase !== 'INTER_ROUND') return;
-    const t = window.setTimeout(() => {
-      setCurrentRound((prev) => prev + 1);
-      setPhase('COUNTDOWN');
-    }, 2500);
-    return () => window.clearTimeout(t);
-  }, [phase]);
-
   // Main 60fps loop
   useEffect(() => {
     if (phase !== 'PLAYING') return;
@@ -834,9 +840,9 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       const isWinningGoal =
         winMode === 'goals' && scoresRef.current[scoringTeamIdx] >= targetGoals;
 
-      // Freeze physics & show 1.5s "جووووون!" celebration overlay on EVERY goal
-      goalPauseUntilRef.current = now + 1500;
-      goalCelebrateUntilRef.current = now + 1500;
+      // Brief 1.1s non-blocking goal celebration banner
+      goalPauseUntilRef.current = now + 1100;
+      goalCelebrateUntilRef.current = now + 1100;
       ballRef.current.possessorIdx = null;
       ballRef.current.vx = 0;
       ballRef.current.vy = 0;
@@ -853,7 +859,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         } else {
           placeKickoffPositions();
         }
-      }, 1500);
+      }, 1100);
     };
 
     const step = (now: number) => {
@@ -934,10 +940,18 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
               const mag = Math.min(1, Math.hypot(joy.dx, joy.dy) / JOYSTICK_MAX_R);
               const dirAng = Math.atan2(joy.dy, joy.dx);
               p.angle = dirAng;
-              const spd = RUN_SPEED * (0.45 + 0.55 * mag);
-              p.x += Math.cos(dirAng) * spd * dt;
-              p.y += Math.sin(dirAng) * spd * dt;
+              const curvedMag = Math.pow(mag, 0.82);
+              const targetSpd = RUN_SPEED * (0.28 + 0.72 * curvedMag);
+              const accelAlpha = 1 - Math.exp(-22 * dt);
+              p.vx += (Math.cos(dirAng) * targetSpd - p.vx) * accelAlpha;
+              p.vy += (Math.sin(dirAng) * targetSpd - p.vy) * accelAlpha;
+            } else {
+              const decelAlpha = Math.exp(-16 * dt);
+              p.vx *= decelAlpha;
+              p.vy *= decelAlpha;
             }
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
           }
 
           // Clamp players comfortably within pitch perimeter
@@ -997,12 +1011,12 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
           }
         }
 
-        // Solid goalpost circle collisions (so narrow goals bounce cleanly off posts!)
+        // Solid goalpost circle collisions (left & right goalposts)
         const posts = [
-          { x: cx - pb.goalHalfW, y: pb.top },
-          { x: cx + pb.goalHalfW, y: pb.top },
-          { x: cx - pb.goalHalfW, y: pb.bottom },
-          { x: cx + pb.goalHalfW, y: pb.bottom },
+          { x: pb.left, y: cy - pb.goalHalfH },
+          { x: pb.left, y: cy + pb.goalHalfH },
+          { x: pb.right, y: cy - pb.goalHalfH },
+          { x: pb.right, y: cy + pb.goalHalfH },
         ];
         if (ball.possessorIdx === null) {
           for (const post of posts) {
@@ -1029,19 +1043,19 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
           }
         }
 
-        // Check Goal Scoring (Top Goal & Bottom Goal on vertical pitch)
-        const inGoalX = Math.abs(ball.x - cx) <= pb.goalHalfW - BALL_R * 0.3;
+        // Check Goal Scoring (Left Goal & Right Goal on horizontal pitch)
+        const inGoalY = Math.abs(ball.y - cy) <= pb.goalHalfH - BALL_R * 0.3;
 
-        // TOP GOAL entered -> Team 0 (Bottom Team / فريق 1) scores!
-        if (ball.y <= pb.top - 4 && inGoalX) {
-          handleGoalScored(0, now);
-        }
-        // BOTTOM GOAL entered -> Team 1 (Top Team / فريق 2) scores!
-        else if (ball.y >= pb.bottom + 4 && inGoalX) {
+        // LEFT GOAL entered -> Right Team (Team 1) scores!
+        if (ball.x <= pb.left - 4 && inGoalY) {
           handleGoalScored(1, now);
+        }
+        // RIGHT GOAL entered -> Left Team (Team 0) scores!
+        else if (ball.x >= pb.right + 4 && inGoalY) {
+          handleGoalScored(0, now);
         } else if (ball.possessorIdx === null) {
           // Free-ball pitch boundary bounces (only trigger audio on sharp impacts with 250ms cooldown)
-          if (ball.x - BALL_R < pb.left) {
+          if (ball.x - BALL_R < pb.left && !inGoalY) {
             const vn = ball.vx * dt;
             ball.x = pb.left + BALL_R;
             ball.vx = Math.abs(ball.vx) * 0.78;
@@ -1049,7 +1063,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
               lastWallSoundTimeRef.current = now;
               soundManager.play('wallBounce');
             }
-          } else if (ball.x + BALL_R > pb.right) {
+          } else if (ball.x + BALL_R > pb.right && !inGoalY) {
             const vn = ball.vx * dt;
             ball.x = pb.right - BALL_R;
             ball.vx = -Math.abs(ball.vx) * 0.78;
@@ -1059,7 +1073,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             }
           }
 
-          if (ball.y - BALL_R < pb.top && !inGoalX) {
+          if (ball.y - BALL_R < pb.top) {
             const vn = ball.vy * dt;
             ball.y = pb.top + BALL_R;
             ball.vy = Math.abs(ball.vy) * 0.78;
@@ -1067,7 +1081,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
               lastWallSoundTimeRef.current = now;
               soundManager.play('wallBounce');
             }
-          } else if (ball.y + BALL_R > pb.bottom && !inGoalX) {
+          } else if (ball.y + BALL_R > pb.bottom) {
             const vn = ball.vy * dt;
             ball.y = pb.bottom - BALL_R;
             ball.vy = -Math.abs(ball.vy) * 0.78;
@@ -1078,10 +1092,10 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
           }
         } else {
           // Gently clamp ball when possessed by a dribbling player — never play bounce sound!
-          ball.x = Math.max(pb.left + BALL_R, Math.min(pb.right - BALL_R, ball.x));
-          if (!inGoalX) {
-            ball.y = Math.max(pb.top + BALL_R, Math.min(pb.bottom - BALL_R, ball.y));
+          if (!inGoalY) {
+            ball.x = Math.max(pb.left + BALL_R, Math.min(pb.right - BALL_R, ball.x));
           }
+          ball.y = Math.max(pb.top + BALL_R, Math.min(pb.bottom - BALL_R, ball.y));
         }
       }
 
@@ -1109,7 +1123,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     placeKickoffPositions,
   ]);
 
-  // Floating Multi-Touch Joystick Handlers (Release-to-Kick OR Release-to-Slide-Tackle)
+  // Ultra-Responsive Floating Multi-Touch Joystick Handlers
   const updateJoy = (
     playerIdx: number,
     rawDx: number,
@@ -1118,7 +1132,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     spawnY: number
   ) => {
     const dist = Math.hypot(rawDx, rawDy);
-    const active = dist > 3;
+    const active = dist > 0.5;
     const clampedDist = Math.min(JOYSTICK_MAX_R, dist);
     const pull = clampedDist / JOYSTICK_MAX_R;
     const nx = dist > 0.01 ? (rawDx / dist) * pull : 0;
@@ -1130,10 +1144,26 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     j.kx = nx;
     j.ky = ny;
     j.active = active;
-    if (dist > 6) {
+    if (dist > 3) {
       j.lastValidDx = rawDx / dist;
       j.lastValidDy = rawDy / dist;
       j.lastValidPull = pull;
+    }
+
+    if (dist > 6) {
+      const ang = Math.atan2(rawDy, rawDx);
+      const prevH = lastJoyHapticRef.current[playerIdx];
+      const now = performance.now();
+      if (prevH) {
+        let diff = ang - prevH.angle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) >= 0.85 && now - prevH.time >= 95) {
+          triggerHaptic(15);
+          prevH.angle = ang;
+          prevH.time = now;
+        }
+      }
     }
 
     setJoyVisuals((prev) =>
@@ -1146,20 +1176,44 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     soundManager.unlock();
+    triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
     const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
     const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
     const cx = rect.left + localX;
     const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY });
+    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
     const j = joysRef.current[playerIdx];
     j.lastValidPull = 0;
-    updateJoy(playerIdx, e.clientX - cx, e.clientY - cy, localX, localY);
+    const rawDx = e.clientX - cx;
+    const rawDy = e.clientY - cy;
+    lastJoyHapticRef.current[playerIdx] = {
+      angle: Math.hypot(rawDx, rawDy) > 1 ? Math.atan2(rawDy, rawDx) : 0,
+      time: performance.now(),
+    };
+    updateJoy(playerIdx, rawDx, rawDy, localX, localY);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
+    const rawDx = e.clientX - entry.cx;
+    const rawDy = e.clientY - entry.cy;
+    const dist = Math.hypot(rawDx, rawDy);
+    const elasticLimit = JOYSTICK_MAX_R * 1.45;
+    if (dist > elasticLimit) {
+      const excess = dist - elasticLimit;
+      const dirX = rawDx / dist;
+      const dirY = rawDy / dist;
+      const candidateCx = entry.cx + dirX * excess * 0.5;
+      const candidateCy = entry.cy + dirY * excess * 0.5;
+      const localX = Math.max(41, Math.min(entry.rect.width - 41, candidateCx - entry.rect.left));
+      const localY = Math.max(41, Math.min(entry.rect.height - 41, candidateCy - entry.rect.top));
+      entry.cx = entry.rect.left + localX;
+      entry.cy = entry.rect.top + localY;
+      entry.x = localX;
+      entry.y = localY;
+    }
     updateJoy(entry.playerIdx, e.clientX - entry.cx, e.clientY - entry.cy, entry.x, entry.y);
   };
 
@@ -1212,7 +1266,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     );
   };
 
-  // Top floating scoreboard string (Team 1 Bottom : Team 2 Top)
+  // Top floating scoreboard string (Left Team : Right Team)
   const scoreboardText = `${scores[0]} : ${scores[1]}`;
 
   return (
@@ -1223,8 +1277,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             title="كرة القدم"
             subtitle={
               players.length >= 3
-                ? 'فريق ١ (تحت) ضد فريق ٢ (فوق): اسحب الجويستيك للتحرك، وسيبه للشوت أو الزحلقة على الكورة!'
-                : '١ ضد ١ (تحت ضد فوق): المس الكورة للمراوغة، وسيب الجويستيك للشوت أو الزحلقة!'
+                ? 'فريق اليسار ضد فريق اليمين: اسحب الجويستيك للتحرك، وسيبه للشوت أو الزحلقة على الكورة!'
+                : '١ ضد ١ (يسار ضد يمين): المس الكورة للمراوغة، وسيب الجويستيك للشوت أو الزحلقة!'
             }
             players={players}
             accentBgClass="bg-gradient-to-br from-[#15803d] to-[#0ea5e9]"
@@ -1327,6 +1381,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
               setTotalRounds(rounds);
               setCurrentRound(1);
               setSeriesScores({});
+              roundWinsRef.current = [0, 0];
+              setRoundWins([0, 0]);
               setPhase('COUNTDOWN');
             }}
             onBack={onExitToArcadeHub}
@@ -1337,10 +1393,37 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       {isRoundActive && (
         <ArcadeFloatingHud
           secondsLeft={secondsLeft}
-          stageLabel={`مباراة ${currentRound}/${totalRounds} · ⚽ ${scoreboardText}`}
+          stageLabel={`مباراة ${currentRound}/${totalRounds}`}
           muted={muted}
           onRequestExit={() => setShowExitConfirm(true)}
         />
+      )}
+
+      {isRoundActive && (
+        <div
+          dir="ltr"
+          className="pointer-events-none fixed top-[36px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-sm border border-white/15 px-3 py-0.5 shadow-md text-[11px] sm:text-xs font-black text-white tabular-nums whitespace-nowrap"
+        >
+          <span className="flex items-center gap-1">
+            <span
+              className="w-2.5 h-2.5 rounded-full border border-white/70"
+              style={{ backgroundColor: leftTeamTheme.hex }}
+            />
+            <span>{leftTeamTheme.name}</span>
+          </span>
+          <span className="text-amber-300 text-xs sm:text-sm">
+            {roundWins[0]} - {roundWins[1]}
+          </span>
+          <span className="flex items-center gap-1">
+            <span>{rightTeamTheme.name}</span>
+            <span
+              className="w-2.5 h-2.5 rounded-full border border-white/70"
+              style={{ backgroundColor: rightTeamTheme.hex }}
+            />
+          </span>
+          <span className="text-white/30">|</span>
+          <span className="text-emerald-300">⚽ {scoreboardText}</span>
+        </div>
       )}
 
       {isRoundActive && (
@@ -1371,43 +1454,27 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             </div>
           )}
 
-          {/* 1.5s Animated Goal Celebration Overlay on Every Goal */}
+          {/* Brief 1.1s Non-Blocking Goal Banner */}
           {goalBanner && (
             <div
               dir="rtl"
-              className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] overflow-hidden"
+              className="pointer-events-none fixed inset-x-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-center px-4 overflow-visible"
             >
-              <div className="absolute inset-0 overflow-hidden">
-                {Array.from({ length: 16 }, (_, ci) => (
-                  <span
-                    key={ci}
-                    style={{
-                      left: `${8 + ((ci * 37) % 84)}%`,
-                      top: '15%',
-                      width: '10px',
-                      height: '16px',
-                      backgroundColor:
-                        ci % 3 === 0
-                          ? TEAM_COLORS[goalBanner.teamIdx].ringHex
-                          : ci % 3 === 1
-                            ? '#FACC15'
-                            : '#FFFFFF',
-                      animation: `confetti-fall 1350ms linear ${(ci % 4) * 90}ms forwards`,
-                    }}
-                    className="absolute rounded-sm"
-                  />
-                ))}
-              </div>
               <div
-                style={{ borderColor: TEAM_COLORS[goalBanner.teamIdx].ringHex }}
-                className="relative animate-goal-pop rounded-3xl bg-[#0F172A]/95 border-4 px-8 py-6 text-center shadow-2xl"
+                style={{
+                  borderColor:
+                    goalBanner.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex,
+                }}
+                className="relative animate-goal-pop rounded-2xl bg-[#0F172A]/90 border-4 px-7 py-4 text-center shadow-2xl"
               >
-                <div className="text-4xl sm:text-5xl font-black text-[#FACC15] drop-shadow mb-2">
+                <div className="text-3xl sm:text-4xl font-black text-[#FACC15] drop-shadow mb-1">
                   جووووون! ⚽🔥
                 </div>
                 <div
-                  style={{ color: TEAM_COLORS[goalBanner.teamIdx].ringHex }}
-                  className="text-lg font-black"
+                  style={{
+                    color: goalBanner.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex,
+                  }}
+                  className="text-sm sm:text-base font-black"
                 >
                   {goalBanner.scorerName
                     ? `بقدم ${goalBanner.scorerName}!`
@@ -1423,7 +1490,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             const theme = ARCADE_COLORS[player.colorId];
             if (!def) return null;
             const jv = joyVisuals[idx] ?? { kx: 0, ky: 0, active: false, x: null, y: null };
-            const teamInfo = TEAM_COLORS[def.teamIdx];
+            const teamHex = def.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex;
             const isFloating = jv.x !== null && jv.y !== null;
 
             return (
@@ -1439,7 +1506,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
               >
                 <div
                   style={{
-                    borderColor: teamInfo.ringHex,
+                    borderColor: teamHex,
                     backgroundColor: jv.active
                       ? 'rgba(15, 23, 42, 0.45)'
                       : 'rgba(15, 23, 42, 0.28)',
@@ -1457,10 +1524,10 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                 >
                   <span
                     style={{
-                      backgroundColor: teamInfo.badgeBg,
+                      backgroundColor: teamHex,
                       textOverflow: 'ellipsis',
                     }}
-                    className={`pointer-events-none absolute -top-5 px-1.5 py-0.5 rounded-full border border-white/35 text-[10px] font-black text-white whitespace-nowrap overflow-hidden max-w-[72px] shadow ${
+                    className={`pointer-events-none absolute -top-5 px-1.5 py-0.5 rounded-full border border-white/45 text-[10px] font-black text-white whitespace-nowrap overflow-hidden max-w-[72px] shadow ${
                       def.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                     }`}
                   >
@@ -1470,32 +1537,18 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                   <div
                     style={{
                       backgroundColor: theme.hex,
-                      borderColor: teamInfo.ringHex,
+                      borderColor: teamHex,
                       transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
                     }}
-                    className="pointer-events-none w-9 h-9 rounded-full border-3 shadow-[0_3px_0_#111827] transition-transform duration-75"
+                    className={`pointer-events-none w-9 h-9 rounded-full border-3 shadow-[0_3px_0_#111827] ${
+                      jv.active ? '' : 'transition-transform duration-150'
+                    }`}
                   />
                 </div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {phase === 'INTER_ROUND' && (
-        <ArcadeSeriesOverlay
-          players={players}
-          seriesScores={seriesScores}
-          roundDeltas={roundDeltas}
-          roundNum={currentRound}
-          totalRounds={totalRounds}
-          headline={summaryText}
-          extraRows={players.map((p, idx) => ({
-            playerId: p.id,
-            badge: `${scores[cornerDefs[idx]?.teamIdx ?? 0] ?? 0} ⚽`,
-          }))}
-          durationMs={2500}
-        />
       )}
 
       {phase === 'WINNER_SPOTLIGHT' && (
@@ -1533,6 +1586,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             onNewRound={() => {
               setCurrentRound(1);
               setSeriesScores({});
+              roundWinsRef.current = [0, 0];
+              setRoundWins([0, 0]);
               setPhase('SETUP');
             }}
             onBackToArcadeHub={onExitToArcadeHub}

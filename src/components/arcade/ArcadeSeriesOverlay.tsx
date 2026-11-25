@@ -21,7 +21,7 @@ export const ArcadeSeriesOverlay: React.FC<ArcadeSeriesOverlayProps> = ({
   totalRounds,
   headline,
   extraRows,
-  durationMs = 2500,
+  durationMs = 3000,
 }) => {
   const [barShrink, setBarShrink] = useState(false);
 

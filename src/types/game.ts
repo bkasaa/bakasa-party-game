@@ -7,6 +7,8 @@ export type AppScreen =
   | 'BOMB_CLASSIC_GAME'
   | 'DRAW_GAME'
   | 'FORGER_GAME'
+  | 'COURT_GAME'
+  | 'HEADSUP_GAME'
   | 'ARCADE_SETUP'
   | 'ARCADE_HUB'
   | 'ARCADE_PAINT'
@@ -15,14 +17,38 @@ export type AppScreen =
   | 'ARCADE_BIRDS'
   | 'ARCADE_RACING'
   | 'ARCADE_CHICKEN'
-  | 'ARCADE_SOCCER';
+  | 'ARCADE_SOCCER'
+  | 'ARCADE_STICKMAN'
+  | 'ARCADE_BALANCE'
+  | 'FOOTBALL_HUB'
+  | 'FOOTBALL_SPY'
+  | 'FOOTBALL_CHAIN'
+  | 'FOOTBALL_THREE'
+  | 'FOOTBALL_CHARADES'
+  | 'FOOTBALL_PENALTY'
+  | 'FOOTBALL_PASSWORD'
+  | 'FOOTBALL_AUCTION'
+  | 'FOOTBALL_TICTACTOE'
+  | 'TOURNAMENT_MODE';
 
 export type GameId =
   | 'spy'
   | 'bomb_questions'
   | 'bomb_classic'
   | 'draw'
-  | 'forger';
+  | 'forger'
+  | 'court'
+  | 'headsup';
+
+export type FootballGameId =
+  | 'football_spy'
+  | 'football_chain'
+  | 'football_three'
+  | 'football_charades'
+  | 'football_penalty'
+  | 'football_password'
+  | 'football_auction'
+  | 'football_tictactoe';
 
 export type ArcadeGameId =
   | 'paint'
@@ -31,7 +57,9 @@ export type ArcadeGameId =
   | 'birds'
   | 'racing'
   | 'chicken'
-  | 'soccer';
+  | 'soccer'
+  | 'stickman'
+  | 'balance';
 
 export type BannerColor = 'pink' | 'blue' | 'coral' | 'green' | 'orange' | 'plum';
 
@@ -55,7 +83,8 @@ export type SpyIconType =
   | 'home'
   | 'gaming'
   | 'fruits'
-  | 'transport';
+  | 'transport'
+  | 'daily_life';
 
 export interface SpyCategory {
   id: string;
@@ -69,6 +98,12 @@ export interface ForgerCategory {
   id: string;
   name: string;
   words: string[];
+}
+
+export interface CategoryBank {
+  id: string;
+  name: string;
+  items: string[];
 }
 
 export type SpyPhase =

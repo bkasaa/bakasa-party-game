@@ -6,6 +6,7 @@ import {
   Bus,
   Car,
   Clapperboard,
+  Coffee,
   EyeOff,
   Flame,
   Gamepad2,
@@ -13,6 +14,8 @@ import {
   Landmark,
   Palette,
   PawPrint,
+  Scale,
+  Smile,
   Sofa,
   Trophy,
   UserCheck,
@@ -23,6 +26,7 @@ import { GameId, SpyIconType } from '../types/game';
 interface BannerThumbProps {
   type: GameId | SpyIconType;
   locked?: boolean;
+  floatDelay?: number;
 }
 
 const THUMB_CONFIG: Record<
@@ -34,6 +38,8 @@ const THUMB_CONFIG: Record<
   bomb_classic: { gradient: 'from-[#7c2d12] to-[#f97316]', Icon: Bomb },
   draw: { gradient: 'from-[#1e3a8a] to-[#06b6d4]', Icon: Palette },
   forger: { gradient: 'from-[#064e3b] to-[#10b981]', Icon: UserCheck },
+  court: { gradient: 'from-[#4c1d95] to-[#7c3aed]', Icon: Scale },
+  headsup: { gradient: 'from-[#9a3412] to-[#f43f5e]', Icon: Smile },
   places: { gradient: 'from-[#7c2d12] to-[#f59e0b]', Icon: Landmark },
   food: { gradient: 'from-[#991b1b] to-[#ef4444]', Icon: Utensils },
   movies: { gradient: 'from-[#0f172a] to-[#2563eb]', Icon: Clapperboard },
@@ -46,9 +52,10 @@ const THUMB_CONFIG: Record<
   gaming: { gradient: 'from-[#4c1d95] to-[#ec4899]', Icon: Gamepad2 },
   fruits: { gradient: 'from-[#14532d] to-[#84cc16]', Icon: Apple },
   transport: { gradient: 'from-[#9a3412] to-[#fb923c]', Icon: Bus },
+  daily_life: { gradient: 'from-[#0369a1] to-[#38bdf8]', Icon: Coffee },
 };
 
-export const BannerThumb: React.FC<BannerThumbProps> = ({ type, locked }) => {
+export const BannerThumb: React.FC<BannerThumbProps> = ({ type, locked, floatDelay = 0 }) => {
   const { gradient, Icon } = THUMB_CONFIG[type];
 
   return (
@@ -58,7 +65,12 @@ export const BannerThumb: React.FC<BannerThumbProps> = ({ type, locked }) => {
       }`}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.28),transparent_60%)]" />
-      <Icon className="w-8 h-8 text-white drop-shadow" />
+      <div
+        className="animate-icon-float flex items-center justify-center"
+        style={{ animationDelay: `${floatDelay}s` }}
+      >
+        <Icon className="w-8 h-8 text-white drop-shadow" />
+      </div>
     </div>
   );
 };

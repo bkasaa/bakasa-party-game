@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { CustomContentModal } from './components/CustomContentModal';
 import { HomeScreen } from './components/HomeScreen';
 import { MainHubScreen } from './components/MainHubScreen';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -7,18 +8,33 @@ import { SplashIntro } from './components/SplashIntro';
 import { ArcadeHubScreen } from './components/arcade/ArcadeHubScreen';
 import { ArcadeSetupScreen } from './components/arcade/ArcadeSetupScreen';
 import { ChickenCatchGame } from './components/arcade/ChickenCatchGame';
+import { BalanceTowerGame } from './components/arcade/BalanceTowerGame';
 import { FrogFlyCatchGame } from './components/arcade/FrogFlyCatchGame';
 import { HappyBirdsGame } from './components/arcade/HappyBirdsGame';
 import { KnifeHitGame } from './components/arcade/KnifeHitGame';
 import { PaintFightGame } from './components/arcade/PaintFightGame';
 import { RacingGame } from './components/arcade/RacingGame';
 import { SoccerGame } from './components/arcade/SoccerGame';
+import { StickmanBattleGame } from './components/arcade/StickmanBattleGame';
 import { BombGameFlow } from './components/bomb/BombGameFlow';
+import { CourtGameFlow } from './components/court/CourtGameFlow';
 import { DrawGameFlow } from './components/draw/DrawGameFlow';
+import { ClubChainGameFlow } from './components/football/ClubChainGameFlow';
+import { FootballAuctionFlow } from './components/football/FootballAuctionFlow';
+import { FootballCharadesFlow } from './components/football/FootballCharadesFlow';
+import { FootballHubScreen } from './components/football/FootballHubScreen';
+import { FootballPasswordFlow } from './components/football/FootballPasswordFlow';
+import { FootballThreeGameFlow } from './components/football/FootballThreeGameFlow';
+import { FootballTicTacToeFlow } from './components/football/FootballTicTacToeFlow';
+import { PenaltyShootoutFlow } from './components/football/PenaltyShootoutFlow';
 import { ForgerGameFlow } from './components/forger/ForgerGameFlow';
+import { HeadsUpGameFlow } from './components/headsup/HeadsUpGameFlow';
 import { SpyGameFlow } from './components/spy/SpyGameFlow';
+import { TournamentModeFlow } from './components/tournament/TournamentModeFlow';
 import { HomeNavigationProvider } from './contexts/NavigationContext';
+import { DEFAULT_FOOTBALL_SETTINGS, FootballGlobalSettings } from './data/footballData';
 import { DEFAULT_PLAYER_NAMES, PLAYER_COLOR_CYCLE } from './data/gameData';
+import { getCustomTotalCount } from './utils/customContentStorage';
 import { useWakeLock } from './hooks/useWakeLock';
 import {
   ARCADE_COLOR_ORDER,
@@ -27,7 +43,14 @@ import {
   ArcadePlayer,
   DEFAULT_ARCADE_PLAYERS,
 } from './types/arcade';
-import { AppScreen, ArcadeGameId, GameId, Player, RoundDelta } from './types/game';
+import {
+  AppScreen,
+  ArcadeGameId,
+  FootballGameId,
+  GameId,
+  Player,
+  RoundDelta,
+} from './types/game';
 import { resetArcadeSessionStats, resetPartySessionStats } from './utils/sessionStats';
 import { useTheme } from './utils/themeManager';
 
@@ -110,14 +133,21 @@ export default function App() {
   const [players, setPlayers] = useState<Player[]>(createInitialPlayers);
   const [arcadePlayers, setArcadePlayers] = useState<ArcadePlayer[]>(createInitialArcadePlayers);
   const [arcadeCount, setArcadeCount] = useState<2 | 3 | 4>(createInitialArcadeCount);
+  const [footballSettings, setFootballSettings] = useState<FootballGlobalSettings>(
+    DEFAULT_FOOTBALL_SETTINGS
+  );
   const [screen, setScreen] = useState<AppScreen>('HOME');
+  const [setupReturnTarget, setSetupReturnTarget] = useState<'HUB' | 'FOOTBALL_HUB' | 'TOURNAMENT_MODE'>('HUB');
+  const [showCustomModal, setShowCustomModal] = useState(false);
+  const [customTotalCount, setCustomTotalCount] = useState<number>(() => getCustomTotalCount());
 
   const isGameActive =
     screen !== 'HOME' &&
     screen !== 'SETUP' &&
     screen !== 'HUB' &&
     screen !== 'ARCADE_SETUP' &&
-    screen !== 'ARCADE_HUB';
+    screen !== 'ARCADE_HUB' &&
+    screen !== 'FOOTBALL_HUB';
   useWakeLock(isGameActive);
 
   useEffect(() => {
@@ -207,6 +237,10 @@ export default function App() {
       setScreen('DRAW_GAME');
     } else if (gameId === 'forger') {
       setScreen('FORGER_GAME');
+    } else if (gameId === 'court') {
+      setScreen('COURT_GAME');
+    } else if (gameId === 'headsup') {
+      setScreen('HEADSUP_GAME');
     }
   };
 
@@ -251,6 +285,19 @@ export default function App() {
     else if (gameId === 'racing') setScreen('ARCADE_RACING');
     else if (gameId === 'chicken') setScreen('ARCADE_CHICKEN');
     else if (gameId === 'soccer') setScreen('ARCADE_SOCCER');
+    else if (gameId === 'stickman') setScreen('ARCADE_STICKMAN');
+    else if (gameId === 'balance') setScreen('ARCADE_BALANCE');
+  };
+
+  const handleSelectFootballGame = (gameId: FootballGameId) => {
+    if (gameId === 'football_spy') setScreen('FOOTBALL_SPY');
+    else if (gameId === 'football_password') setScreen('FOOTBALL_PASSWORD');
+    else if (gameId === 'football_chain') setScreen('FOOTBALL_CHAIN');
+    else if (gameId === 'football_three') setScreen('FOOTBALL_THREE');
+    else if (gameId === 'football_charades') setScreen('FOOTBALL_CHARADES');
+    else if (gameId === 'football_penalty') setScreen('FOOTBALL_PENALTY');
+    else if (gameId === 'football_auction') setScreen('FOOTBALL_AUCTION');
+    else if (gameId === 'football_tictactoe') setScreen('FOOTBALL_TICTACTOE');
   };
 
   const activeArcadePlayers = arcadePlayers.slice(0, arcadeCount);
@@ -264,8 +311,15 @@ export default function App() {
         <HomeScreen
           playerCount={players.length}
           arcadePlayerCount={arcadeCount}
-          onStartPlay={() => setScreen('SETUP')}
+          customTotalCount={customTotalCount}
+          onStartPlay={() => {
+            setSetupReturnTarget('HUB');
+            setScreen('SETUP');
+          }}
           onStartArcade={() => setScreen('ARCADE_SETUP')}
+          onStartFootball={() => setScreen('FOOTBALL_HUB')}
+          onStartTournament={() => setScreen('TOURNAMENT_MODE')}
+          onOpenCustomContent={() => setShowCustomModal(true)}
         />
       )}
 
@@ -276,8 +330,16 @@ export default function App() {
           onUpdatePlayerName={handleUpdatePlayerName}
           onRemovePlayer={handleRemovePlayer}
           onResetScores={handleResetScores}
-          onContinue={() => setScreen('HUB')}
-          onBackToHome={() => setScreen('HOME')}
+          onContinue={() => setScreen(setupReturnTarget)}
+          onBackToHome={() =>
+            setScreen(
+              setupReturnTarget === 'FOOTBALL_HUB'
+                ? 'FOOTBALL_HUB'
+                : setupReturnTarget === 'TOURNAMENT_MODE'
+                  ? 'TOURNAMENT_MODE'
+                  : 'HOME'
+            )
+          }
         />
       )}
 
@@ -285,7 +347,10 @@ export default function App() {
         <MainHubScreen
           players={players}
           onSelectGame={handleSelectGame}
-          onEditPlayers={() => setScreen('SETUP')}
+          onEditPlayers={() => {
+            setSetupReturnTarget('HUB');
+            setScreen('SETUP');
+          }}
         />
       )}
 
@@ -325,6 +390,21 @@ export default function App() {
 
       {screen === 'FORGER_GAME' && (
         <ForgerGameFlow
+          players={players}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('HUB')}
+        />
+      )}
+
+      {screen === 'COURT_GAME' && (
+        <CourtGameFlow
+          players={players}
+          onExitToHub={() => setScreen('HUB')}
+        />
+      )}
+
+      {screen === 'HEADSUP_GAME' && (
+        <HeadsUpGameFlow
           players={players}
           onApplyDeltas={handleApplyDeltas}
           onExitToHub={() => setScreen('HUB')}
@@ -408,6 +488,137 @@ export default function App() {
           onExitToArcadeHub={() => setScreen('ARCADE_HUB')}
         />
       )}
+
+      {screen === 'ARCADE_STICKMAN' && (
+        <StickmanBattleGame
+          players={activeArcadePlayers}
+          onApplyDeltas={handleApplyArcadeDeltas}
+          onExitToArcadeHub={() => setScreen('ARCADE_HUB')}
+        />
+      )}
+
+      {screen === 'ARCADE_BALANCE' && (
+        <BalanceTowerGame
+          players={players}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToArcadeHub={() => setScreen('ARCADE_HUB')}
+        />
+      )}
+
+      {/* Football Corner (قعدة اللاعيبة) */}
+      {screen === 'FOOTBALL_HUB' && (
+        <FootballHubScreen
+          players={players}
+          settings={footballSettings}
+          onChangeSettings={setFootballSettings}
+          onSelectGame={handleSelectFootballGame}
+          onEditPlayers={() => {
+            setSetupReturnTarget('FOOTBALL_HUB');
+            setScreen('SETUP');
+          }}
+          onBackToHome={() => setScreen('HOME')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_SPY' && (
+        <SpyGameFlow
+          variant="football"
+          players={players}
+          footballSettings={footballSettings}
+          onUpdateFootballSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_PASSWORD' && (
+        <FootballPasswordFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_CHAIN' && (
+        <ClubChainGameFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_THREE' && (
+        <FootballThreeGameFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_CHARADES' && (
+        <FootballCharadesFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_PENALTY' && (
+        <PenaltyShootoutFlow
+          players={players}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_AUCTION' && (
+        <FootballAuctionFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'FOOTBALL_TICTACTOE' && (
+        <FootballTicTacToeFlow
+          players={players}
+          initialSettings={footballSettings}
+          onUpdateSettings={setFootballSettings}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToHub={() => setScreen('FOOTBALL_HUB')}
+        />
+      )}
+
+      {screen === 'TOURNAMENT_MODE' && (
+        <TournamentModeFlow
+          players={players}
+          footballSettings={footballSettings}
+          onUpdateFootballSettings={setFootballSettings}
+          onEditPlayers={() => {
+            setSetupReturnTarget('TOURNAMENT_MODE');
+            setScreen('SETUP');
+          }}
+          onExitToHome={() => setScreen('HOME')}
+        />
+      )}
+
+      <CustomContentModal
+        open={showCustomModal}
+        onClose={() => {
+          setShowCustomModal(false);
+          setCustomTotalCount(getCustomTotalCount());
+        }}
+      />
 
       <OfflineIndicator />
       </div>

@@ -1,12 +1,21 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bomb, Flame, Lock, RefreshCw, Skull } from 'lucide-react';
-import { BANNER_COLOR_CLASSES, BOMB_PROMPTS, CLASSIC_BOMB_TOPICS } from '../../data/gameData';
+import {
+  BANNER_COLOR_CLASSES,
+  BOMB_PROMPTS,
+  BOMB_QUESTION_CATEGORIES,
+  CLASSIC_BOMB_CATEGORIES,
+  CLASSIC_BOMB_TOPICS,
+} from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { BombPhase, Player, RoundDelta } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { recordBombExplosion } from '../../utils/sessionStats';
+import { getCustomContent } from '../../utils/customContentStorage';
 import { pickUnseenItem } from '../../utils/usedItemsMemory';
+import { ActiveTurnBanner } from '../ActiveTurnBanner';
+import { CategoryFilterBar } from '../CategoryFilterBar';
 import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { PlayerAvatar } from '../PlayerAvatar';
@@ -17,6 +26,7 @@ interface BombGameFlowProps {
   players: Player[];
   onApplyDeltas: (deltas: RoundDelta[]) => void;
   onExitToHub: () => void;
+  onTournamentFinish?: (deltas: RoundDelta[]) => void;
 }
 
 function lerpColor(t: number): string {
@@ -41,18 +51,40 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
   players,
   onApplyDeltas,
   onExitToHub,
+  onTournamentFinish,
 }) => {
   const guard = useTapGuard(400);
   const isClassic = mode === 'classic';
   const gameTitle = isClassic ? 'القنبلة' : 'أسئلة القنبلة';
 
+  const categoryBank = useMemo(() => {
+    const base = isClassic ? CLASSIC_BOMB_CATEGORIES : BOMB_QUESTION_CATEGORIES;
+    const custom = getCustomContent();
+    const customList = isClassic ? custom.words : custom.questions;
+    if (customList.length === 0) return base;
+    const customCat = {
+      id: isClassic ? '__custom_bomb_words__' : '__custom_bomb_questions__',
+      name: isClassic ? 'كلماتك الخاصة ✍️' : 'أسئلتك الخاصة ✍️',
+      items: customList,
+    };
+    if (custom.mode === 'custom_only') return [customCat];
+    return [customCat, ...base];
+  }, [isClassic]);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [phase, setPhase] = useState<BombPhase>('READY');
-  const [currentPrompt, setCurrentPrompt] = useState<string>(() =>
-    isClassic ? pickUnseenItem('bomb_classic', CLASSIC_BOMB_TOPICS) : ''
-  );
+  const [currentPrompt, setCurrentPrompt] = useState<string>(() => {
+    if (!isClassic) return '';
+    const custom = getCustomContent();
+    const initialPool =
+      custom.mode === 'custom_only' && custom.words.length > 0
+        ? custom.words
+        : [...custom.words, ...CLASSIC_BOMB_TOPICS];
+    return pickUnseenItem('bomb_classic:all', initialPool);
+  });
   const [urgencyLevel, setUrgencyLevel] = useState<'idle' | 'medium' | 'urgent'>('idle');
   const [bombProgress, setBombProgress] = useState<number>(0);
   const [explodingFlash, setExplodingFlash] = useState<boolean>(false);
+  const [currentHolderIdx, setCurrentHolderIdx] = useState<number>(0);
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
   const [loserName, setLoserName] = useState<string>('');
   const [passFlash, setPassFlash] = useState<boolean>(false);
@@ -96,11 +128,51 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
     return () => clearBombTimers();
   }, [clearBombTimers]);
 
+  const activeCategories = useMemo(
+    () =>
+      selectedCategoryIds.length === 0
+        ? categoryBank
+        : categoryBank.filter((cat) => selectedCategoryIds.includes(cat.id)),
+    [categoryBank, selectedCategoryIds]
+  );
+
+  const pooledItems = useMemo(
+    () => Array.from(new Set(activeCategories.flatMap((cat) => cat.items))),
+    [activeCategories]
+  );
+
+  const bucketKey = useMemo(
+    () =>
+      `${isClassic ? 'bomb_classic' : 'bomb_questions'}:${
+        selectedCategoryIds.length === 0 ? 'all' : [...selectedCategoryIds].sort().join(',')
+      }`,
+    [isClassic, selectedCategoryIds]
+  );
+
   const advancePrompt = useCallback(() => {
-    const bucketKey = isClassic ? 'bomb_classic' : 'bomb_questions';
-    const source = isClassic ? CLASSIC_BOMB_TOPICS : BOMB_PROMPTS;
+    const fallback = isClassic ? CLASSIC_BOMB_TOPICS : BOMB_PROMPTS;
+    const source = pooledItems.length > 0 ? pooledItems : fallback;
     setCurrentPrompt(pickUnseenItem(bucketKey, source));
-  }, [isClassic]);
+  }, [bucketKey, isClassic, pooledItems]);
+
+  const handleCategoryFilterChange = useCallback(
+    (nextIds: string[]) => {
+      setSelectedCategoryIds(nextIds);
+      if (isClassic) {
+        const nextCats =
+          nextIds.length === 0
+            ? categoryBank
+            : categoryBank.filter((cat) => nextIds.includes(cat.id));
+        const nextPool = Array.from(new Set(nextCats.flatMap((cat) => cat.items)));
+        const nextBucket = `bomb_classic:${
+          nextIds.length === 0 ? 'all' : [...nextIds].sort().join(',')
+        }`;
+        const source = nextPool.length > 0 ? nextPool : CLASSIC_BOMB_TOPICS;
+        setCurrentPrompt(pickUnseenItem(nextBucket, source));
+      }
+    },
+    [categoryBank, isClassic]
+  );
 
   const startBombRound = guard(() => {
     soundManager.unlock();
@@ -119,6 +191,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
     setUrgencyLevel('idle');
     setBombProgress(0);
     setExplodingFlash(false);
+    setCurrentHolderIdx(0);
     setRoundDeltas([]);
     setLoserName('');
     setPhase('ACTIVE');
@@ -130,11 +203,11 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       setBombProgress(1);
       setShaking(true);
       setExplodingFlash(true);
-      window.setTimeout(() => setShaking(false), 380);
+      window.setTimeout(() => setShaking(false), 600);
       blastDelayTimeoutRef.current = window.setTimeout(() => {
         setExplodingFlash(false);
         setPhase('EXPLODED');
-      }, 680);
+      }, 3000);
     }, hiddenMs);
 
     const scheduleNextTick = () => {
@@ -176,9 +249,20 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
   const handlePassedBomb = guard(() => {
     soundManager.play('next');
     advancePrompt();
+    if (players.length > 0) {
+      setCurrentHolderIdx((prev) => (prev + 1) % players.length);
+    }
     setPassFlash(true);
     window.setTimeout(() => setPassFlash(false), 180);
   });
+
+  const handleAdvanceClassicHolder = () => {
+    if (players.length === 0) return;
+    soundManager.play('click');
+    setCurrentHolderIdx((prev) => (prev + 1) % players.length);
+    setPassFlash(true);
+    window.setTimeout(() => setPassFlash(false), 150);
+  };
 
   const handleSelectLoser = guard((loser: Player) => {
     soundManager.play('defeat');
@@ -236,14 +320,14 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
         />
       )}
 
-      {/* Full-Screen Radial Blast Overlay */}
+      {/* Full-Screen Radial Blast Overlay (exactly 3 seconds) */}
       {explodingFlash && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-rose-600/35"
+          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-rose-600/45 backdrop-blur-[2px]"
         >
-          <div className="w-[340px] h-[340px] rounded-full bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600 animate-blast-expand shadow-[0_0_90px_40px_rgba(249,115,22,0.85)]" />
-          <div className="absolute text-5xl sm:text-6xl font-black text-white drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)] animate-goal-pop">
+          <div className="w-[340px] h-[340px] rounded-full bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600 animate-blast-expand shadow-[0_0_95px_45px_rgba(249,115,22,0.85)]" />
+          <div className="absolute text-5xl sm:text-6xl font-black text-white drop-shadow-[0_6px_14px_rgba(0,0,0,0.7)] animate-boom-text-3s">
             بوووم! 💥
           </div>
         </div>
@@ -289,19 +373,34 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                     soundManager.play('click');
                     advancePrompt();
                   })}
-                  className="mb-6 min-h-[42px] px-4 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs sm:text-sm font-black text-[#1E293B] dark:text-white flex items-center gap-1.5 transition-colors"
+                  className="mb-5 min-h-[42px] px-4 rounded-xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-xs sm:text-sm font-black text-[#1E293B] dark:text-white flex items-center gap-1.5 transition-colors"
                 >
                   <RefreshCw className="w-4 h-4 text-[#FF6B4A]" />
                   <span>تغيير الموضوع</span>
                 </button>
               </>
             ) : (
-              <p className="text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-8">
+              <p className="text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-5">
                 هيظهر لك سؤال سريع — جاوب بصوت عالي واضغط{' '}
                 <span className="text-[#059669] dark:text-emerald-400 font-black">&quot;جاوبت - اللي بعده!&quot;</span>{' '}
                 عشان يتغير السؤال ويمرر الموبايل بسرعة! الوقت مخفي بين ٣٠ ثانية و٣ دقايق.
               </p>
             )}
+
+            <div className="w-full max-w-md mb-6">
+              <CategoryFilterBar
+                categories={categoryBank.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  count: c.items.length,
+                }))}
+                selectedIds={selectedCategoryIds}
+                onChange={handleCategoryFilterChange}
+                totalAvailable={pooledItems.length}
+                unitLabel={isClassic ? 'موضوع' : 'سؤال'}
+                accentColor={isClassic ? 'amber' : 'coral'}
+              />
+            </div>
 
             <button
               type="button"
@@ -316,6 +415,18 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
         {/* PHASE 2: ACTIVE GAMEPLAY WITH ANIMATED CHARACTER BOMB */}
         {phase === 'ACTIVE' && (
           <div className="flex-1 flex flex-col items-center justify-between py-2">
+            {players.length > 0 && (
+              <ActiveTurnBanner
+                label="الموبايل دلوقتي مع:"
+                player={players[currentHolderIdx % players.length]}
+                badgeText={
+                  players.length > 1
+                    ? `اللي بعده: ${players[(currentHolderIdx + 1) % players.length]?.name}`
+                    : undefined
+                }
+                accent={urgencyLevel === 'urgent' ? 'rose' : 'amber'}
+              />
+            )}
             <div className="flex-1 flex flex-col items-center justify-center w-full py-2">
               <div
                 style={{ transform: `scale(${bombScale})`, transition: 'transform 0.2s ease-out' }}
@@ -508,8 +619,15 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                 </button>
               </div>
             ) : (
-              <div className="w-full max-w-md pt-3 text-center">
-                <div className="rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-3.5 text-sm sm:text-base font-extrabold text-[#B45309] dark:text-amber-300">
+              <div className="w-full max-w-md pt-3 flex flex-col gap-2 text-center">
+                <button
+                  type="button"
+                  onClick={handleAdvanceClassicHolder}
+                  className="w-full min-h-[58px] rounded-2xl bakasa-btn-green text-white text-xl font-black tracking-wide transition-transform"
+                >
+                  قلت إجابة — باصي للي بعده!
+                </button>
+                <div className="text-xs font-extrabold text-[#B45309] dark:text-amber-300">
                   كل لاعب يقول إجابة ويدي الموبايل للي جنبه فوراً!
                 </div>
               </div>
@@ -562,10 +680,15 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
             players={players}
             deltas={roundDeltas}
             summaryHeadline={`القنبلة انفجرت في ${loserName} (-١٠٠ نقطة)`}
+            isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={handleNewRound}
             onFinishGame={() => {
               clearBombTimers();
-              onExitToHub();
+              if (onTournamentFinish) {
+                onTournamentFinish(roundDeltas);
+              } else {
+                onExitToHub();
+              }
             }}
           />
         )}

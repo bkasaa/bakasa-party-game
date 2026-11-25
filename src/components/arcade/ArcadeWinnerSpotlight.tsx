@@ -44,7 +44,7 @@ export const ArcadeWinnerSpotlight: React.FC<ArcadeWinnerSpotlightProps> = ({
 
     const t = window.setTimeout(() => {
       onContinueToLeaderboard();
-    }, 3300);
+    }, 3000);
 
     return () => window.clearTimeout(t);
   }, [onContinueToLeaderboard]);
@@ -68,7 +68,7 @@ export const ArcadeWinnerSpotlight: React.FC<ArcadeWinnerSpotlightProps> = ({
         className="pointer-events-none absolute w-[190vmax] h-[190vmax] rounded-full animate-spotlight-spin opacity-80"
       />
 
-      {/* Confetti Shower */}
+      {/* Subtle Confetti Shower (~1.8s, non-blocking) */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
         {confettiPieces.map((c) => (
           <span
@@ -79,9 +79,9 @@ export const ArcadeWinnerSpotlight: React.FC<ArcadeWinnerSpotlightProps> = ({
               width: `${c.sizeW}px`,
               height: `${c.sizeH}px`,
               backgroundColor: c.color,
-              animation: `confetti-fall ${c.durationMs}ms linear ${c.delayMs}ms infinite`,
+              animation: `confetti-fall ${Math.min(1800, c.durationMs)}ms linear ${Math.min(250, c.delayMs)}ms forwards`,
             }}
-            className="absolute rounded-sm shadow-sm"
+            className="pointer-events-none absolute rounded-sm opacity-0 shadow-sm"
           />
         ))}
       </div>

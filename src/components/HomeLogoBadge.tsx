@@ -25,7 +25,7 @@ export const HomeLogoBadge: React.FC<HomeLogoBadgeProps> = ({
       <img
         src="/app-icon.png"
         alt="قعدة الشلة"
-        className="w-full h-full object-cover pointer-events-none select-none"
+        className="w-full h-full object-cover pointer-events-none select-none animate-icon-float"
       />
     </button>
   );

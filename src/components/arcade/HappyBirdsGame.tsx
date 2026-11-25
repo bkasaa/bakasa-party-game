@@ -546,13 +546,13 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
     };
   }, [phase, matchSeconds, resetMatchState, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round scoreboard banner
+  // Auto-advance after 3s floating inter-round scoreboard banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setCurrentRound((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -857,7 +857,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
             playerId: p.id,
             badge: `${scores[idx] ?? 0} ن`,
           }))}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 

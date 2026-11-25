@@ -6,7 +6,10 @@ import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { ForgerCategory, ForgerPhase, Player, RoundDelta } from '../../types/game';
 import { soundManager } from '../../utils/soundManager';
 import { recordSpyCatch } from '../../utils/sessionStats';
+import { getCustomContent } from '../../utils/customContentStorage';
 import { pickUnseenItem } from '../../utils/usedItemsMemory';
+import { ActiveTurnBanner } from '../ActiveTurnBanner';
+import { CategoryFilterBar } from '../CategoryFilterBar';
 import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { PlayerAvatar } from '../PlayerAvatar';
@@ -18,6 +21,7 @@ interface ForgerGameFlowProps {
   players: Player[];
   onApplyDeltas: (deltas: RoundDelta[]) => void;
   onExitToHub: () => void;
+  onTournamentFinish?: (deltas: RoundDelta[]) => void;
 }
 
 interface PlayerBrush {
@@ -29,10 +33,12 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
   players,
   onApplyDeltas,
   onExitToHub,
+  onTournamentFinish,
 }) => {
   const guard = useTapGuard(400);
 
   const [phase, setPhase] = useState<ForgerPhase>('READY');
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [category, setCategory] = useState<ForgerCategory>(FORGER_CATEGORIES[0]);
   const [secretWord, setSecretWord] = useState<string>('');
   const [forgerId, setForgerId] = useState<string>('');
@@ -77,12 +83,38 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
     setShowExitConfirm(true);
   });
 
+  const forgerCategoryBank = useMemo(() => {
+    const custom = getCustomContent();
+    if (custom.words.length === 0) return FORGER_CATEGORIES;
+    const customCat: ForgerCategory = {
+      id: '__custom_forger_words__',
+      name: 'كلماتك الخاصة ✍️',
+      words: custom.words,
+    };
+    if (custom.mode === 'custom_only') return [customCat];
+    return [customCat, ...FORGER_CATEGORIES];
+  }, []);
+
+  const activeForgerCategories = useMemo(
+    () =>
+      selectedCategoryIds.length === 0
+        ? forgerCategoryBank
+        : forgerCategoryBank.filter((cat) => selectedCategoryIds.includes(cat.id)),
+    [forgerCategoryBank, selectedCategoryIds]
+  );
+
+  const totalForgerWords = useMemo(
+    () => activeForgerCategories.reduce((sum, cat) => sum + cat.words.length, 0),
+    [activeForgerCategories]
+  );
+
   const startNewRound = guard(() => {
     soundManager.unlock();
     soundManager.play('next');
 
-    const chosenCategory =
-      FORGER_CATEGORIES[Math.floor(Math.random() * FORGER_CATEGORIES.length)];
+    const categoryPool =
+      activeForgerCategories.length > 0 ? activeForgerCategories : forgerCategoryBank;
+    const chosenCategory = categoryPool[Math.floor(Math.random() * categoryPool.length)];
     const chosenWord = pickUnseenItem(`forger:${chosenCategory.id}`, chosenCategory.words);
 
     const chosenForger = players[Math.floor(Math.random() * players.length)];
@@ -93,7 +125,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
       brushes[p.id] = FORGER_BRUSH_COLORS[idx % FORGER_BRUSH_COLORS.length];
     });
 
-    // Randomize player turn order for drawing (2 full rounds)
+    // Randomize player turn order for drawing (1 fast round)
     const shuffledDrawers = [...players].sort(() => Math.random() - 0.5);
 
     setCategory(chosenCategory);
@@ -156,7 +188,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
     setTurnStrokeDone(true);
   };
 
-  const totalDrawTurns = drawOrder.length * 2;
+  const totalDrawTurns = drawOrder.length;
 
   const handleAdvanceDrawTurn = guard(() => {
     if (!turnStrokeDone) return;
@@ -251,7 +283,6 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
   const isRevealForger = revealPlayer?.id === forgerId;
   const revealBrush = revealPlayer ? playerBrushes[revealPlayer.id] : undefined;
 
-  const currentRoundNumber = Math.floor(drawStepIdx / Math.max(1, drawOrder.length)) + 1;
   const activeDrawer = drawOrder[drawStepIdx % Math.max(1, drawOrder.length)];
   const nextDrawer =
     drawStepIdx + 1 < totalDrawTurns
@@ -290,15 +321,29 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
             <p className="text-sm sm:text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-6">
               كل لاعب ليه لون فرشاة مختلف! الكل عارف الكلمة ما عدا{' '}
               <span className="text-[#E11D48] dark:text-rose-400 font-black">&quot;المزور&quot;</span>. كل واحد هيرسم{' '}
-              <span className="text-[#059669] dark:text-emerald-400 font-black">خط واحد متصل</span> في كل دور على
-              مدار جولتين وبعدين تصوتوا مين المزور!
+              <span className="text-[#059669] dark:text-emerald-400 font-black">خط واحد متصل</span> في دوره (جولة واحدة سريعة!) وبعدين تصوتوا مين المزور!
             </p>
 
             {players.length < 3 && (
-              <div className="w-full max-w-sm rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-2.5 text-xs font-extrabold text-[#B45309] dark:text-amber-300 mb-6">
+              <div className="w-full max-w-sm rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-2.5 text-xs font-extrabold text-[#B45309] dark:text-amber-300 mb-5">
                 ملاحظة: يفضّل ٣ لاعبين أو أكتر لمتعة المزور، لكن تقدروا تلعبوا بـ ٢ عادي!
               </div>
             )}
+
+            <div className="w-full max-w-md mb-6">
+              <CategoryFilterBar
+                categories={FORGER_CATEGORIES.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  count: c.words.length,
+                }))}
+                selectedIds={selectedCategoryIds}
+                onChange={setSelectedCategoryIds}
+                totalAvailable={totalForgerWords}
+                unitLabel="كلمة"
+                accentColor="emerald"
+              />
+            </div>
 
             <button
               type="button"
@@ -312,12 +357,16 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
 
         {/* PHASE 2: PASS TO PLAYER FOR ANTI-PEEK ROLE REVEAL */}
         {phase === 'PASS_REVEAL' && revealPlayer && (
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            <div className="mb-4 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
-              <span>
-                اللاعب {revealIdx + 1} من {players.length}
-              </span>
-              <span>·</span>
+          <div className="flex-1 flex flex-col items-center justify-center py-4">
+            <ActiveTurnBanner
+              label="دور استلام الكارت:"
+              player={revealPlayer}
+              swatchHex={revealBrush?.hex}
+              badgeText={`${revealIdx + 1} من ${players.length}`}
+              accent="emerald"
+            />
+
+            <div className="mb-3 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
               <span className="text-[#1E293B] dark:text-white">القسم: {category.name}</span>
             </div>
 
@@ -358,8 +407,16 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
 
         {/* PHASE 3: TAP & HOLD ROLE REVEAL */}
         {phase === 'REVEAL_ROLE' && revealPlayer && (
-          <div className="flex-1 flex flex-col items-center justify-center py-4 no-select">
-            <div className="flex items-center gap-3 mb-5">
+          <div className="flex-1 flex flex-col items-center justify-center py-2 no-select">
+            <ActiveTurnBanner
+              label="اللي بيشوف دوره دلوقتي:"
+              player={revealPlayer}
+              swatchHex={revealBrush?.hex}
+              badgeText={`${revealIdx + 1} من ${players.length}`}
+              accent="teal"
+            />
+
+            <div className="flex items-center gap-3 mb-4">
               <PlayerAvatar avatarId={revealPlayer.avatarId} name={revealPlayer.name} size="md" />
               <div className="text-right">
                 <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">دور اللاعب</div>
@@ -481,24 +538,21 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
           </div>
         )}
 
-        {/* PHASE 4: COLLABORATIVE SHARED CANVAS (2 ROUNDS, 1 CONTINUOUS STROKE PER TURN) */}
+        {/* PHASE 4: COLLABORATIVE SHARED CANVAS (1 SINGLE ROUND, 1 CONTINUOUS STROKE PER TURN) */}
         {phase === 'DRAW_STROKE' && activeDrawer && activeDrawerBrush && (
-          <div className="flex-1 flex flex-col gap-3">
-            {/* Active turn header */}
-            <div className="w-full rounded-2xl qada-card px-4 py-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span
-                  className="w-7 h-7 rounded-xl border-2 border-white dark:border-[#334155] shrink-0 shadow"
-                  style={{ backgroundColor: activeDrawerBrush.hex }}
-                />
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">
-                    القسم: {category.name} · الجولة {currentRoundNumber} من ٢
-                  </div>
-                  <div className="text-base sm:text-lg font-black text-[#1E293B] dark:text-white truncate">
-                    دور الرسم: {activeDrawer.name}
-                  </div>
-                </div>
+          <div className="flex-1 flex flex-col gap-2.5">
+            <ActiveTurnBanner
+              label="اللي بيرسم دلوقتي:"
+              player={activeDrawer}
+              swatchHex={activeDrawerBrush.hex}
+              badgeText={`دور ${drawStepIdx + 1} من ${totalDrawTurns}`}
+              accent="emerald"
+            />
+
+            {/* Active turn details */}
+            <div className="w-full rounded-2xl qada-card px-4 py-2.5 flex items-center justify-between gap-3">
+              <div className="text-xs sm:text-sm font-extrabold text-[#64748B] dark:text-[#94A3B8] truncate">
+                القسم: <span className="text-[#1E293B] dark:text-white">{category.name}</span> · لونك: {activeDrawerBrush.name}
               </div>
 
               <div className="shrink-0 rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] px-3 py-1.5 text-xs font-black text-[#0D9488] dark:text-[#2DD4BF] flex items-center gap-1.5">
@@ -570,6 +624,14 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
         {/* PHASE 5: VOTING WITH COMPLETED GROUP DRAWING VISIBLE */}
         {phase === 'VOTING' && currentVoter && (
           <div className="flex-1 flex flex-col items-center gap-4 pb-4">
+            <ActiveTurnBanner
+              label="اللي بيصوّت دلوقتي:"
+              player={currentVoter}
+              swatchHex={playerBrushes[currentVoter.id]?.hex}
+              badgeText={`${voterIdx + 1} من ${players.length}`}
+              accent="coral"
+            />
+
             {/* Completed Drawing visible at top */}
             <div className="w-full max-w-sm flex flex-col items-center gap-2">
               <ForgerCanvas
@@ -656,7 +718,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
         {/* PHASE 6A: REVEAL FAKE ARTIST IDENTITY */}
         {phase === 'FORGER_IDENTITY_REVEAL' && forgerPlayer && (
           <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6">
+            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6 animate-reveal-3s">
               <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-[#FFF1F2] dark:bg-rose-950/60 border-2 border-[#FECDD3] dark:border-rose-800 flex items-center justify-center text-[#E11D48] dark:text-rose-300">
                 <EyeOff className="w-9 h-9" />
               </div>
@@ -715,6 +777,12 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
         {/* PHASE 6B: FAKE ARTIST'S LAST CHANCE */}
         {phase === 'FORGER_FINAL_GUESS' && forgerPlayer && (
           <div className="flex-1 flex flex-col items-center py-2">
+            <ActiveTurnBanner
+              label="اللي بيخمن دلوقتي (المزور):"
+              player={forgerPlayer}
+              swatchHex={playerBrushes[forgerPlayer.id]?.hex}
+              accent="rose"
+            />
             <div className="w-full rounded-3xl qada-card p-4 text-center mb-4">
               <div className="text-xs font-extrabold text-[#FF6B4A] mb-1">
                 القسم: {category.name}
@@ -764,7 +832,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
         {/* PHASE 7: FINAL WORD REVEAL & SCORE BREAKDOWN */}
         {phase === 'ROUND_REVEAL' && forgerPlayer && (
           <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6">
+            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6 animate-reveal-3s">
               <div
                 className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center ${
                   forgerGuessedRight || forgerEscapedVotes
@@ -850,8 +918,15 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
             players={players}
             deltas={roundDeltas}
             summaryHeadline={`المزور: ${forgerPlayer.name} · الكلمة: ${secretWord}`}
+            isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={startNewRound}
-            onFinishGame={onExitToHub}
+            onFinishGame={() => {
+              if (onTournamentFinish) {
+                onTournamentFinish(roundDeltas);
+              } else {
+                onExitToHub();
+              }
+            }}
           />
         )}
       </main>

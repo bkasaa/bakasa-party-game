@@ -49,10 +49,14 @@ interface PlayerEntity {
   darkHex: string;
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   angle: number;
   carryingIds: number[];
   capturedCount: number;
   pen: PenRect;
+  nestShieldUntil: number;
+  bumpCooldownUntil: number;
 }
 
 interface ChickenEntity {
@@ -67,6 +71,7 @@ interface ChickenEntity {
   penIdx: number | null;
   panicking: boolean;
   nextWanderAt: number;
+  pickupCooldownUntil: number;
   flapSeed: number;
 }
 
@@ -279,10 +284,13 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
   const chickensRef = useRef<ChickenEntity[]>([]);
   const popupsRef = useRef<FloatingPopup[]>([]);
   const joyPointersRef = useRef<
-    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number }>
+    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number; rect: DOMRect }>
   >(new Map());
   const joyVectorsRef = useRef<Array<{ dx: number; dy: number; active: boolean }>>(
     players.map(() => ({ dx: 0, dy: 0, active: false }))
+  );
+  const lastJoyHapticRef = useRef<Array<{ angle: number; time: number }>>(
+    players.map(() => ({ angle: 0, time: 0 }))
   );
   const roundStartRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
@@ -340,10 +348,14 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
         darkHex: theme.darkHex,
         x: startX,
         y: startY,
+        vx: 0,
+        vy: 0,
         angle: Math.atan2(cy - startY, cx - startX),
         carryingIds: [],
         capturedCount: 0,
         pen,
+        nestShieldUntil: 0,
+        bumpCooldownUntil: 0,
       };
     });
 
@@ -365,6 +377,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
         penIdx: null,
         panicking: false,
         nextWanderAt: performance.now() + 700 + Math.random() * 1100,
+        pickupCooldownUntil: 0,
         flapSeed: Math.random() * 10,
       });
     }
@@ -531,6 +544,44 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${pe.capturedCount}`, houseX, houseY + 1);
+
+      // Active 1.5s Protective Nest Shield after a steal
+      if (pe.nestShieldUntil > now) {
+        const shieldRatio = Math.max(0, Math.min(1, (pe.nestShieldUntil - now) / 1500));
+        const pulse = 0.22 + Math.sin(now * 0.02) * 0.08;
+        ctx.fillStyle = `rgba(56, 189, 248, ${pulse})`;
+        ctx.beginPath();
+        ctx.roundRect(pen.x - 2, pen.y - 2, pen.w + 4, pen.h + 4, 18);
+        ctx.fill();
+
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath();
+        ctx.roundRect(pen.x - 2, pen.y - 2, pen.w + 4, pen.h + 4, 18);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Circular shield countdown ring around pen center
+        const ringX = pen.x + pen.w / 2;
+        const ringY = pen.y + pen.h / 2;
+        ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(ringX, ringY, 18, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = '#38BDF8';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(ringX, ringY, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * shieldRatio);
+        ctx.stroke();
+
+        ctx.font = '900 14px Cairo, sans-serif';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText('🛡️', ringX, ringY + 1);
+      }
+
       ctx.restore();
     }
 
@@ -604,13 +655,13 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
     };
   }, [phase, matchSeconds, resetMatchState, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round banner
+  // Auto-advance after 3s floating inter-round banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setCurrentRound((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -644,7 +695,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
       const { w, h } = arenaSizeRef.current;
       let uiDirty = false;
 
-      // Move players with 360° analog joystick
+      // Move players with responsive 360° analog joystick & smooth acceleration
       for (let i = 0; i < playerEntitiesRef.current.length; i++) {
         const pe = playerEntitiesRef.current[i];
         const joy = joyVectorsRef.current[i];
@@ -653,10 +704,18 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
           const dirAngle = Math.atan2(joy.dy, joy.dx);
           pe.angle = dirAngle;
           const carryPenalty = pe.carryingIds.length >= 2 ? 0.92 : 1;
-          const spd = PLAYER_SPEED * (0.45 + 0.55 * mag) * carryPenalty;
-          pe.x += Math.cos(dirAngle) * spd * dt;
-          pe.y += Math.sin(dirAngle) * spd * dt;
+          const curvedMag = Math.pow(mag, 0.82);
+          const targetSpd = PLAYER_SPEED * (0.28 + 0.72 * curvedMag) * carryPenalty;
+          const accelAlpha = 1 - Math.exp(-20 * dt);
+          pe.vx += (Math.cos(dirAngle) * targetSpd - pe.vx) * accelAlpha;
+          pe.vy += (Math.sin(dirAngle) * targetSpd - pe.vy) * accelAlpha;
+        } else {
+          const decelAlpha = Math.exp(-16 * dt);
+          pe.vx *= decelAlpha;
+          pe.vy *= decelAlpha;
         }
+        pe.x += pe.vx * dt;
+        pe.y += pe.vy * dt;
 
         const margin = 20;
         pe.x = Math.max(margin, Math.min(w - margin, pe.x));
@@ -698,9 +757,51 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
             });
           }
         }
+
+        // Steal a chicken directly from an opponent's unshielded nest/pen!
+        if (pe.carryingIds.length < MAX_CARRY) {
+          for (let j = 0; j < playerEntitiesRef.current.length; j++) {
+            if (j === i) continue;
+            const targetPe = playerEntitiesRef.current[j];
+            if (targetPe.capturedCount <= 0 || now < targetPe.nestShieldUntil) continue;
+
+            const tPen = targetPe.pen;
+            const insideTargetPen =
+              pe.x >= tPen.x + 4 &&
+              pe.x <= tPen.x + tPen.w - 4 &&
+              pe.y >= tPen.y + 4 &&
+              pe.y <= tPen.y + tPen.h - 4;
+
+            if (insideTargetPen) {
+              const stolen = chickensRef.current.find(
+                (c) => c.state === 'penned' && c.penIdx === j
+              );
+              if (stolen) {
+                stolen.state = 'carried';
+                stolen.carrierIdx = i;
+                stolen.penIdx = null;
+                stolen.panicking = true;
+                pe.carryingIds.push(stolen.id);
+                targetPe.capturedCount = Math.max(0, targetPe.capturedCount - 1);
+                targetPe.nestShieldUntil = now + 1500; // 1.5s shield cooldown!
+                uiDirty = true;
+                soundManager.play('sting');
+                triggerHaptic([35, 30]);
+                popupsRef.current.push({
+                  x: pe.x,
+                  y: pe.y - 26,
+                  text: 'سرقة! 😈',
+                  color: '#38BDF8',
+                  life: 1.15,
+                });
+                break;
+              }
+            }
+          }
+        }
       }
 
-      // Soft player-to-player collision
+      // Soft player-to-player collision + mid-field bump knock-loose stealing
       for (let i = 0; i < playerEntitiesRef.current.length; i++) {
         for (let j = i + 1; j < playerEntitiesRef.current.length; j++) {
           const a = playerEntitiesRef.current[i];
@@ -709,11 +810,57 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
           const dy = b.y - a.y;
           const d = Math.hypot(dx, dy);
           if (d > 0.01 && d < 30) {
+            const nx = dx / d;
+            const ny = dy / d;
             const push = (30 - d) * 0.5;
-            a.x -= (dx / d) * push;
-            a.y -= (dy / d) * push;
-            b.x += (dx / d) * push;
-            b.y += (dy / d) * push;
+            a.x -= nx * push;
+            a.y -= ny * push;
+            b.x += nx * push;
+            b.y += ny * push;
+
+            if (now >= a.bumpCooldownUntil && now >= b.bumpCooldownUntil) {
+              const aSpeedToward = a.vx * nx + a.vy * ny;
+              const bSpeedToward = -(b.vx * nx + b.vy * ny);
+              let victim: PlayerEntity | null = null;
+              let dirX = nx;
+              let dirY = ny;
+
+              if (b.carryingIds.length > 0 && aSpeedToward > bSpeedToward + 15) {
+                victim = b;
+              } else if (a.carryingIds.length > 0 && bSpeedToward > aSpeedToward + 15) {
+                victim = a;
+                dirX = -nx;
+                dirY = -ny;
+              }
+
+              if (victim) {
+                const droppedId = victim.carryingIds.pop();
+                const dropped = chickensRef.current.find((c) => c.id === droppedId);
+                if (dropped) {
+                  dropped.state = 'loose';
+                  dropped.carrierIdx = null;
+                  dropped.panicking = true;
+                  dropped.x = victim.x + dirX * 18;
+                  dropped.y = victim.y + dirY * 18;
+                  const scatterAng = Math.atan2(dirY, dirX) + (Math.random() - 0.5) * 0.9;
+                  dropped.vx = Math.cos(scatterAng) * 175;
+                  dropped.vy = Math.sin(scatterAng) * 175;
+                  dropped.pickupCooldownUntil = now + 450;
+                  a.bumpCooldownUntil = now + 680;
+                  b.bumpCooldownUntil = now + 680;
+                  uiDirty = true;
+                  soundManager.play('hit');
+                  triggerHaptic(28);
+                  popupsRef.current.push({
+                    x: victim.x,
+                    y: victim.y - 24,
+                    text: 'طارت الفرخة! 💨',
+                    color: '#FB923C',
+                    life: 1.0,
+                  });
+                }
+              }
+            }
           }
         }
       }
@@ -749,18 +896,20 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
         // Loose chicken
         looseCount++;
 
-        // Check player pickup first
+        // Check player pickup first (respecting post-knock cooldown)
         let pickedUp = false;
-        for (const pe of playerEntitiesRef.current) {
-          if (pe.carryingIds.length < MAX_CARRY && Math.hypot(pe.x - ch.x, pe.y - ch.y) < 28) {
-            ch.state = 'carried';
-            ch.carrierIdx = pe.playerIdx;
-            pe.carryingIds.push(ch.id);
-            pickedUp = true;
-            uiDirty = true;
-            soundManager.play('catch');
-            triggerHaptic(25);
-            break;
+        if (now >= ch.pickupCooldownUntil) {
+          for (const pe of playerEntitiesRef.current) {
+            if (pe.carryingIds.length < MAX_CARRY && Math.hypot(pe.x - ch.x, pe.y - ch.y) < 28) {
+              ch.state = 'carried';
+              ch.carrierIdx = pe.playerIdx;
+              pe.carryingIds.push(ch.id);
+              pickedUp = true;
+              uiDirty = true;
+              soundManager.play('catch');
+              triggerHaptic(25);
+              break;
+            }
           }
         }
         if (pickedUp) {
@@ -847,7 +996,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, matchSeconds, drawScene, finishRound]);
 
-  // Floating Multi-Touch 360° Joystick Handlers
+  // Ultra-Responsive Floating Multi-Touch 360° Joystick Handlers
   const updateJoy = (
     playerIdx: number,
     rawDx: number,
@@ -856,11 +1005,28 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
     spawnY: number
   ) => {
     const dist = Math.hypot(rawDx, rawDy);
-    const active = dist > 4;
+    const active = dist > 0.5;
     const clampedDist = Math.min(JOYSTICK_MAX_R, dist);
     const nx = dist > 0.01 ? (rawDx / dist) * (clampedDist / JOYSTICK_MAX_R) : 0;
     const ny = dist > 0.01 ? (rawDy / dist) * (clampedDist / JOYSTICK_MAX_R) : 0;
     joyVectorsRef.current[playerIdx] = { dx: rawDx, dy: rawDy, active };
+
+    if (dist > 6) {
+      const ang = Math.atan2(rawDy, rawDx);
+      const prevH = lastJoyHapticRef.current[playerIdx];
+      const now = performance.now();
+      if (prevH) {
+        let diff = ang - prevH.angle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        if (Math.abs(diff) >= 0.85 && now - prevH.time >= 95) {
+          triggerHaptic(15);
+          prevH.angle = ang;
+          prevH.time = now;
+        }
+      }
+    }
+
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
         idx === playerIdx ? { kx: nx, ky: ny, active: true, x: spawnX, y: spawnY } : item
@@ -871,18 +1037,42 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     soundManager.unlock();
+    triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
     const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
     const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
     const cx = rect.left + localX;
     const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY });
-    updateJoy(playerIdx, e.clientX - cx, e.clientY - cy, localX, localY);
+    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
+    const rawDx = e.clientX - cx;
+    const rawDy = e.clientY - cy;
+    lastJoyHapticRef.current[playerIdx] = {
+      angle: Math.hypot(rawDx, rawDy) > 1 ? Math.atan2(rawDy, rawDx) : 0,
+      time: performance.now(),
+    };
+    updateJoy(playerIdx, rawDx, rawDy, localX, localY);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
+    const rawDx = e.clientX - entry.cx;
+    const rawDy = e.clientY - entry.cy;
+    const dist = Math.hypot(rawDx, rawDy);
+    const elasticLimit = JOYSTICK_MAX_R * 1.45;
+    if (dist > elasticLimit) {
+      const excess = dist - elasticLimit;
+      const dirX = rawDx / dist;
+      const dirY = rawDy / dist;
+      const candidateCx = entry.cx + dirX * excess * 0.5;
+      const candidateCy = entry.cy + dirY * excess * 0.5;
+      const localX = Math.max(41, Math.min(entry.rect.width - 41, candidateCx - entry.rect.left));
+      const localY = Math.max(41, Math.min(entry.rect.height - 41, candidateCy - entry.rect.top));
+      entry.cx = entry.rect.left + localX;
+      entry.cy = entry.rect.top + localY;
+      entry.x = localX;
+      entry.y = localY;
+    }
     updateJoy(entry.playerIdx, e.clientX - entry.cx, e.clientY - entry.cy, entry.x, entry.y);
   };
 
@@ -960,7 +1150,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                 {countdownNum}
               </div>
               <div className="mt-3 text-sm sm:text-base font-black text-white/95">
-                احمل حتى دجاجتين وادخل بيهم حوشك الملون!
+                احمل حتى دجاجتين، ادخل حوشك أو اسرق من عش خصمك (درع ١.٥ ثانية بعد كل سرقة)!
               </div>
             </div>
           )}
@@ -1017,7 +1207,9 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                       backgroundColor: theme.hex,
                       transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
                     }}
-                    className="pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] transition-transform duration-75"
+                    className={`pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] ${
+                      jv.active ? '' : 'transition-transform duration-150'
+                    }`}
                   />
                 </div>
               </div>
@@ -1038,7 +1230,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
             playerId: p.id,
             badge: `${capturedCounts[idx] ?? 0} 🐔`,
           }))}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 

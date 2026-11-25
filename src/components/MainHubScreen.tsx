@@ -5,6 +5,7 @@ import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { GameId, Player } from '../types/game';
 import { soundManager, triggerHaptic } from '../utils/soundManager';
 import { BannerThumb } from './BannerThumb';
+import { CardWatermark } from './CardWatermark';
 import { PWAInstallButton } from './PWAInstallButton';
 import { PlayerAvatar } from './PlayerAvatar';
 import { TopBar } from './TopBar';
@@ -158,57 +159,64 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
             const style = BANNER_COLOR_CLASSES[game.color];
             const isHighlighted = rouletteId === game.id;
             return (
-              <button
+              <div
                 key={game.id}
-                type="button"
-                onClick={() => handleCardTap(game.id, game.active, game.title)}
-                className={`group relative overflow-hidden w-full min-h-[78px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-3 flex items-center justify-between gap-3 text-right transition-all active:scale-95 ${
-                  !game.active ? 'opacity-80' : 'hover:brightness-105'
-                } ${
-                  isHighlighted
-                    ? 'ring-4 ring-[#F59E0B] scale-[1.03] brightness-110'
-                    : isSpinning
-                      ? 'opacity-65'
-                      : ''
-                }`}
+                className="animate-card-float"
+                style={{ animationDelay: `${idx * 0.45}s` }}
               >
-                {/* Asymmetric floating corner circle & subtle shimmer */}
-                <div className="pointer-events-none absolute -top-6 -left-6 w-24 h-24 rounded-full bg-white/10" />
-                {game.active && (
-                  <div
-                    className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer-sweep"
-                    style={{ animationDelay: `${idx * 0.9}s` }}
-                  />
-                )}
-
-                <div className="relative flex items-center gap-3.5 min-w-0">
-                  <BannerThumb type={game.id} locked={!game.active} />
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-lg sm:text-xl font-black text-white truncate">
-                        {game.title}
-                      </span>
-                      {!game.active && (
-                        <span className="inline-flex items-center gap-1 rounded-lg bg-black/25 border border-white/25 px-2 py-0.5 text-[11px] font-black text-amber-100 shrink-0">
-                          <Lock className="w-3 h-3" />
-                          قريباً
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
-                      {game.subtitle}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="relative shrink-0 text-white/95 transition-transform group-hover:-translate-x-1">
-                  {game.active ? (
-                    <ChevronLeft className="w-6 h-6" />
-                  ) : (
-                    <Lock className="w-5 h-5 text-white/75" />
+                <button
+                  type="button"
+                  onClick={() => handleCardTap(game.id, game.active, game.title)}
+                  className={`group relative overflow-hidden w-full min-h-[78px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card px-4 py-3 flex items-center justify-between gap-3 text-right ${
+                    !game.active ? 'opacity-80' : 'hover:brightness-105'
+                  } ${
+                    isHighlighted
+                      ? 'ring-4 ring-[#F59E0B] scale-[1.03] brightness-110'
+                      : isSpinning
+                        ? 'opacity-65'
+                        : ''
+                  }`}
+                >
+                  {/* Custom Vector Line-Art Watermark */}
+                  <CardWatermark kind={game.id} />
+                  {/* Asymmetric floating corner circle & subtle shimmer */}
+                  <div className="pointer-events-none absolute -top-6 -left-6 w-24 h-24 rounded-full bg-white/10" />
+                  {game.active && (
+                    <div
+                      className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer-sweep"
+                      style={{ animationDelay: `${idx * 0.9}s` }}
+                    />
                   )}
-                </div>
-              </button>
+
+                  <div className="relative flex items-center gap-3.5 min-w-0">
+                    <BannerThumb type={game.id} locked={!game.active} floatDelay={idx * 0.35} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-lg sm:text-xl font-black text-white truncate">
+                          {game.title}
+                        </span>
+                        {!game.active && (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-black/25 border border-white/25 px-2 py-0.5 text-[11px] font-black text-amber-100 shrink-0">
+                            <Lock className="w-3 h-3" />
+                            قريباً
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
+                        {game.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="relative shrink-0 text-white/95 transition-transform group-hover:-translate-x-1">
+                    {game.active ? (
+                      <ChevronLeft className="w-6 h-6" />
+                    ) : (
+                      <Lock className="w-5 h-5 text-white/75" />
+                    )}
+                  </div>
+                </button>
+              </div>
             );
           })}
         </div>

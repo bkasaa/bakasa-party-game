@@ -158,10 +158,13 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
   const nextSpawnAtRef = useRef<number>(0);
 
   const joyPointersRef = useRef<
-    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number }>
+    Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number; rect: DOMRect }>
   >(new Map());
   const joyVectorsRef = useRef<Array<{ dx: number; dy: number; active: boolean }>>(
     players.map(() => ({ dx: 0, dy: 0, active: false }))
+  );
+  const lastJoyHapticRef = useRef<Array<{ angle: number; time: number }>>(
+    players.map(() => ({ angle: 0, time: 0 }))
   );
 
   const roundStartRef = useRef<number>(0);
@@ -617,13 +620,13 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     };
   }, [phase, matchSeconds, initMatchEntities, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round scoreboard banner
+  // Auto-advance after 3s floating inter-round scoreboard banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setCurrentRound((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -685,8 +688,9 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
         const joy = joyVectorsRef.current[i];
         if (joy && joy.active) {
           const desired = Math.atan2(joy.dy, joy.dx);
+          const mag = Math.min(1, Math.hypot(joy.dx, joy.dy) / JOYSTICK_MAX_R);
           const diff = normalizeAngle(desired - roller.angle);
-          const maxTurn = 10.5 * dt;
+          const maxTurn = (15 + 9 * mag) * dt;
           if (Math.abs(diff) <= maxTurn) {
             roller.angle = desired;
           } else {
@@ -795,29 +799,42 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, matchSeconds, drawScene, computeCoverageAndFinish]);
 
-  // Floating Multi-Touch 360° Virtual Analog Joystick handlers
+  // Floating Multi-Touch 360° Virtual Analog Joystick handlers (Zero-deadzone + Haptics)
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     soundManager.unlock();
+    triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
     const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
     const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
     const cx = rect.left + localX;
     const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY });
+    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
+    lastJoyHapticRef.current[playerIdx] = { angle: 0, time: performance.now() };
     updateJoyFromCoords(playerIdx, e.clientX - cx, e.clientY - cy, localX, localY);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
-    updateJoyFromCoords(
-      entry.playerIdx,
-      e.clientX - entry.cx,
-      e.clientY - entry.cy,
-      entry.x,
-      entry.y
-    );
+    let rawDx = e.clientX - entry.cx;
+    let rawDy = e.clientY - entry.cy;
+    const dist = Math.hypot(rawDx, rawDy);
+    const followLimit = JOYSTICK_MAX_R * 1.45;
+    if (dist > followLimit) {
+      const shift = dist - followLimit;
+      const ux = rawDx / dist;
+      const uy = rawDy / dist;
+      const nextLocalX = Math.max(36, Math.min(entry.rect.width - 36, entry.x + ux * shift));
+      const nextLocalY = Math.max(36, Math.min(entry.rect.height - 36, entry.y + uy * shift));
+      entry.x = nextLocalX;
+      entry.y = nextLocalY;
+      entry.cx = entry.rect.left + nextLocalX;
+      entry.cy = entry.rect.top + nextLocalY;
+      rawDx = e.clientX - entry.cx;
+      rawDy = e.clientY - entry.cy;
+    }
+    updateJoyFromCoords(entry.playerIdx, rawDx, rawDy, entry.x, entry.y);
   };
 
   const updateJoyFromCoords = (
@@ -828,10 +845,20 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     spawnY: number
   ) => {
     const dist = Math.hypot(rawDx, rawDy);
-    const active = dist > 4;
+    const active = dist > 0.5;
     const clampedDist = Math.min(JOYSTICK_MAX_R, dist);
     const nx = dist > 0.01 ? (rawDx / dist) * (clampedDist / JOYSTICK_MAX_R) : 0;
     const ny = dist > 0.01 ? (rawDy / dist) * (clampedDist / JOYSTICK_MAX_R) : 0;
+
+    if (dist > 4) {
+      const ang = Math.atan2(rawDy, rawDx);
+      const now = performance.now();
+      const prevH = lastJoyHapticRef.current[playerIdx];
+      if (prevH && now - prevH.time >= 95 && Math.abs(normalizeAngle(ang - prevH.angle)) >= 0.85) {
+        triggerHaptic(15);
+        lastJoyHapticRef.current[playerIdx] = { angle: ang, time: now };
+      }
+    }
 
     joyVectorsRef.current[playerIdx] = { dx: rawDx, dy: rawDy, active };
     setJoyVisuals((prev) =>
@@ -997,7 +1024,9 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
                       backgroundColor: eff.frozen ? '#bae6fd' : theme.hex,
                       transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
                     }}
-                    className="pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] flex items-center justify-center transition-transform duration-75"
+                    className={`pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] flex items-center justify-center ${
+                      jv.active ? '' : 'transition-transform duration-150'
+                    }`}
                   >
                     <span
                       className={`w-2.5 h-2.5 rounded-full bg-white/75 ${SLOT_ROTATE_STYLE[placement.slot]}`}
@@ -1022,7 +1051,7 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
             playerId: s.playerId,
             badge: `${s.percent}%`,
           }))}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 

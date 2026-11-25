@@ -55,6 +55,7 @@ interface CarEntity {
   x: number;
   y: number;
   angle: number;
+  steerCur: number;
   lap: number;
   checkpointIdx: number; // 0..7 sequential checkpoints around loop
   bonusPoints: number;
@@ -324,6 +325,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
   const popupsRef = useRef<FloatingPopup[]>([]);
   const steerInputsRef = useRef<number[]>(players.map(() => 0));
   const wheelPointersRef = useRef<Map<number, { playerIdx: number; cx: number }>>(new Map());
+  const lastSteerHapticRef = useRef<Array<{ sign: number; steer: number; time: number }>>(
+    players.map(() => ({ sign: 0, steer: 0, time: 0 }))
+  );
   const nextPickupIdRef = useRef<number>(1);
   const nextSpawnAtRef = useRef<number>(0);
   const roundStartRef = useRef<number>(0);
@@ -505,6 +509,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         x: startPt.x + perpX * lat - forwardX * back,
         y: startPt.y + perpY * lat - forwardY * back,
         angle: startAngle,
+        steerCur: 0,
         lap: 1,
         checkpointIdx: 0,
         bonusPoints: 0,
@@ -774,13 +779,13 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     };
   }, [phase, resetMatchState, drawScene]);
 
-  // Auto-advance after 2.5s floating inter-round banner
+  // Auto-advance after 3s floating inter-round banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setCurrentRound((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -837,8 +842,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         const car = carsRef.current[i];
         if (car.frozenUntil > now) continue;
 
-        const steer = steerInputsRef.current[i] ?? 0;
-        car.angle += steer * TURN_RATE * dt;
+        const targetSteer = steerInputsRef.current[i] ?? 0;
+        car.steerCur += (targetSteer - car.steerCur) * (1 - Math.exp(-22 * dt));
+        car.angle += car.steerCur * TURN_RATE * dt;
 
         const trackInfo = closestTrackPoint(car.x, car.y, loop);
         const onGrass = trackInfo.dist > roadW * 0.54;
@@ -1006,19 +1012,37 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, targetLaps, drawScene, finishRound]);
 
-  // Circular Steering Wheel Multi-Touch Handlers
+  // Ultra-Responsive Circular Steering Wheel Multi-Touch Handlers
   const updateSteer = (playerIdx: number, clientX: number, cx: number) => {
-    const steer = Math.max(-1, Math.min(1, (clientX - cx) / 34));
+    const raw = Math.max(-1, Math.min(1, (clientX - cx) / 28));
+    const steer = Math.sign(raw) * Math.pow(Math.abs(raw), 0.9);
     steerInputsRef.current[playerIdx] = steer;
     setSteerVisuals((prev) => prev.map((v, i) => (i === playerIdx ? steer : v)));
+
+    const sign = Math.abs(steer) > 0.12 ? Math.sign(steer) : 0;
+    const prevH = lastSteerHapticRef.current[playerIdx];
+    const now = performance.now();
+    if (prevH && sign !== 0 && now - prevH.time >= 95) {
+      if ((prevH.sign !== 0 && prevH.sign !== sign) || Math.abs(steer - prevH.steer) >= 0.7) {
+        triggerHaptic(15);
+        prevH.sign = sign;
+        prevH.steer = steer;
+        prevH.time = now;
+      } else if (prevH.sign === 0) {
+        prevH.sign = sign;
+        prevH.steer = steer;
+      }
+    }
   };
 
   const handleWheelDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     soundManager.unlock();
+    triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
     wheelPointersRef.current.set(e.pointerId, { playerIdx, cx });
+    lastSteerHapticRef.current[playerIdx] = { sign: 0, steer: 0, time: performance.now() };
     updateSteer(playerIdx, e.clientX, cx);
   };
 
@@ -1155,7 +1179,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
                   style={{
                     transform: `rotate(${steer * 68}deg)`,
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[11px] border-[#111827] bg-black/25 shadow-[0_5px_0_rgba(0,0,0,0.45)] flex items-center justify-center transition-transform duration-75"
+                  className={`pointer-events-none relative w-full h-full rounded-full border-[11px] border-[#111827] bg-black/25 shadow-[0_5px_0_rgba(0,0,0,0.45)] flex items-center justify-center ${
+                    steer !== 0 ? '' : 'transition-transform duration-150'
+                  }`}
                 >
                   {/* Top yellow steering reference marker */}
                   <span className="absolute -top-[10px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-[#facc15]" />
@@ -1189,7 +1215,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
           roundNum={currentRound}
           totalRounds={totalRounds}
           headline={summaryText}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 

@@ -1,10 +1,13 @@
 import React from 'react';
+import { ScoreboardMood } from '../utils/scoreboardMood';
 
 interface PlayerAvatarProps {
   avatarId: number;
   name: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  rank?: number; // 1, 2, 3 get gold, silver, bronze medals
+  rank?: number; // 1, 2, 3 get gold, silver, bronze medals; 4+ if showAllRanks
+  showAllRanks?: boolean;
+  mood?: ScoreboardMood;
   className?: string;
 }
 
@@ -34,20 +37,52 @@ const RANK_BADGE: Record<number, { bg: string; text: string }> = {
   3: { bg: 'bg-[#d97706]', text: 'text-white' },
 };
 
+const MOOD_ANIMATION: Record<ScoreboardMood, string> = {
+  winner: 'animate-rank-winner',
+  middle: 'animate-rank-middle',
+  last: 'animate-rank-cry',
+  neutral: '',
+};
+
+const MOOD_BADGE: Record<
+  Exclude<ScoreboardMood, 'neutral'>,
+  { emoji: string; bg: string; label: string }
+> = {
+  winner: { emoji: '🏆', bg: 'bg-[#FEF08A] border-[#F59E0B]', label: 'المركز الأول' },
+  middle: { emoji: '😊', bg: 'bg-[#D1FAE5] border-[#34D399]', label: 'مركز متقدم' },
+  last: { emoji: '😰', bg: 'bg-[#FFE4E6] border-[#F43F5E]', label: 'المركز الأخير' },
+};
+
 export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   avatarId,
   name,
   size = 'md',
   rank,
+  showAllRanks = false,
+  mood,
   className = '',
 }) => {
   const palette = AVATAR_PALETTES[Math.abs(avatarId) % AVATAR_PALETTES.length];
-  const badge = rank && rank <= 3 ? RANK_BADGE[rank] : null;
+  const badge =
+    rank && rank <= 3
+      ? RANK_BADGE[rank]
+      : rank && showAllRanks
+        ? { bg: 'bg-[#334155]', text: 'text-white' }
+        : null;
+  const activeMood = mood ?? 'neutral';
+  const moodAnimClass = MOOD_ANIMATION[activeMood];
+  const moodBadge = activeMood !== 'neutral' ? MOOD_BADGE[activeMood] : null;
 
   return (
-    <div className={`relative shrink-0 ${SIZE_CLASSES[size]} ${className}`}>
+    <div className={`relative shrink-0 ${SIZE_CLASSES[size]} ${moodAnimClass} ${className}`}>
       <div
-        className="w-full h-full rounded-full overflow-hidden border-[2.5px] border-white/85 shadow-md flex items-center justify-center"
+        className={`w-full h-full rounded-full overflow-hidden border-[2.5px] shadow-md flex items-center justify-center ${
+          activeMood === 'winner'
+            ? 'border-[#FACC15] ring-2 ring-[#FDE047]/70'
+            : activeMood === 'last'
+              ? 'border-[#FDA4AF]'
+              : 'border-white/85'
+        }`}
         style={{ backgroundColor: palette.bg }}
         aria-label={name}
       >
@@ -116,11 +151,137 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
             </>
           )}
 
-          {/* Eyes */}
-          <circle cx="26.5" cy="29" r="2.2" fill="#1e1b2e" />
-          <circle cx="37.5" cy="29" r="2.2" fill="#1e1b2e" />
-          <circle cx="27.2" cy="28.3" r="0.7" fill="#ffffff" />
-          <circle cx="38.2" cy="28.3" r="0.7" fill="#ffffff" />
+          {/* Dynamic Facial Expression by Mood */}
+          {activeMood === 'winner' ? (
+            <>
+              {/* Happy arched eyes */}
+              <path
+                d="M23.5 29.5 Q26.5 25.5 29.5 29.5"
+                stroke="#1e1b2e"
+                strokeWidth="2.3"
+                strokeLinecap="round"
+                fill="none"
+              />
+              <path
+                d="M34.5 29.5 Q37.5 25.5 40.5 29.5"
+                stroke="#1e1b2e"
+                strokeWidth="2.3"
+                strokeLinecap="round"
+                fill="none"
+              />
+              {/* Rosy cheeks */}
+              <circle cx="23" cy="33" r="2.2" fill="#fb7185" opacity="0.55" />
+              <circle cx="41" cy="33" r="2.2" fill="#fb7185" opacity="0.55" />
+              {/* Big celebrating open smile */}
+              <path
+                d="M26 34.5 Q32 42 38 34.5 Z"
+                fill="#991b1b"
+                stroke="#7c2d12"
+                strokeWidth="1.4"
+                strokeLinejoin="round"
+              />
+              <path d="M29 38.2 Q32 39.8 35 38.2" fill="#fb7185" />
+            </>
+          ) : activeMood === 'middle' ? (
+            <>
+              {/* Cheerful bright eyes & rosy cheeks */}
+              <circle cx="26.5" cy="29" r="2.2" fill="#1e1b2e" />
+              <circle cx="37.5" cy="29" r="2.2" fill="#1e1b2e" />
+              <circle cx="27.2" cy="28.3" r="0.7" fill="#ffffff" />
+              <circle cx="38.2" cy="28.3" r="0.7" fill="#ffffff" />
+              <circle cx="22.8" cy="33" r="1.9" fill="#fb7185" opacity="0.4" />
+              <circle cx="41.2" cy="33" r="1.9" fill="#fb7185" opacity="0.4" />
+              {/* Warm happy smile */}
+              <path
+                d="M26.5 34.8 Q32 40.2 37.5 34.8"
+                stroke="#7c2d12"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </>
+          ) : activeMood === 'last' ? (
+            <>
+              {/* Sad eyebrows & squeezed desperate eyes */}
+              <path
+                d="M23 26.2 L29 24.4"
+                stroke="#451a03"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M41 26.2 L35 24.4"
+                stroke="#451a03"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M24 28 L29 29.8 L24 31.4"
+                stroke="#1e1b2e"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+              <path
+                d="M40 28 L35 29.8 L40 31.4"
+                stroke="#1e1b2e"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                fill="none"
+              />
+              {/* Desperate sweat drop on temple */}
+              <path
+                d="M44 21 C45.8 23.8, 45.8 26.2, 44 26.2 C42.2 26.2, 42.2 23.8, 44 21 Z"
+                fill="#38bdf8"
+                className="animate-sweat-drop"
+              />
+              {/* Tear streams */}
+              <rect x="24.5" y="31.5" width="3" height="6.5" rx="1.5" fill="#38bdf8" opacity="0.85" />
+              <rect x="36.5" y="31.5" width="3" height="6.5" rx="1.5" fill="#38bdf8" opacity="0.85" />
+              <circle
+                cx="26"
+                cy="36"
+                r="1.7"
+                fill="#7dd3fc"
+                className="animate-tear-drop"
+              />
+              <circle
+                cx="38"
+                cy="36"
+                r="1.7"
+                fill="#7dd3fc"
+                className="animate-tear-drop"
+                style={{ animationDelay: '0.45s' }}
+              />
+              {/* Trembling sad mouth */}
+              <path
+                d="M27.5 38 Q32 33.8 36.5 38"
+                stroke="#7c2d12"
+                strokeWidth="2.1"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </>
+          ) : (
+            <>
+              {/* Default Eyes */}
+              <circle cx="26.5" cy="29" r="2.2" fill="#1e1b2e" />
+              <circle cx="37.5" cy="29" r="2.2" fill="#1e1b2e" />
+              <circle cx="27.2" cy="28.3" r="0.7" fill="#ffffff" />
+              <circle cx="38.2" cy="28.3" r="0.7" fill="#ffffff" />
+
+              {/* Default Smile */}
+              <path
+                d="M27.5 35.5 Q32 39.5 36.5 35.5"
+                stroke="#7c2d12"
+                strokeWidth="2"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </>
+          )}
 
           {palette.accessory === 'glasses' && (
             <g stroke="#1e293b" strokeWidth="1.8" fill="none">
@@ -129,21 +290,31 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
               <line x1="31" y1="29" x2="33" y2="29" />
             </g>
           )}
-
-          {/* Smile */}
-          <path
-            d="M27.5 35.5 Q32 39.5 36.5 35.5"
-            stroke="#7c2d12"
-            strokeWidth="2"
-            strokeLinecap="round"
-            fill="none"
-          />
         </svg>
       </div>
 
+      {activeMood === 'winner' && (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-2 -right-2 text-[11px] leading-none animate-pulse select-none"
+        >
+          ✨
+        </span>
+      )}
+
+      {moodBadge && (
+        <span
+          title={moodBadge.label}
+          aria-label={moodBadge.label}
+          className={`pointer-events-none absolute -top-1.5 -left-1.5 w-6 h-6 rounded-full border ${moodBadge.bg} text-xs leading-none flex items-center justify-center shadow-sm`}
+        >
+          {moodBadge.emoji}
+        </span>
+      )}
+
       {badge && (
         <span
-          className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${badge.bg} ${badge.text} text-[11px] font-black flex items-center justify-center shadow ring-2 ring-white dark:ring-[#1E293B] tabular-nums`}
+          className={`pointer-events-none absolute -bottom-1 -right-1 w-5 h-5 rounded-full ${badge.bg} ${badge.text} text-[11px] font-black flex items-center justify-center shadow ring-2 ring-white dark:ring-[#1E293B] tabular-nums`}
         >
           {rank}
         </span>

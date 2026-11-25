@@ -15,15 +15,26 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import {
+  DEFAULT_FOOTBALL_SETTINGS,
+  FOOTBALL_SPY_CATEGORIES,
+  FootballGlobalSettings,
+  filterByScope,
+} from '../../data/footballData';
 import { BANNER_COLOR_CLASSES, SPY_CATEGORIES } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player, RoundDelta, SpyCategory, SpyPhase } from '../../types/game';
 import { soundManager } from '../../utils/soundManager';
 import { recordSpyCatch } from '../../utils/sessionStats';
+import { getCustomContent } from '../../utils/customContentStorage';
 import { pickUnseenItem } from '../../utils/usedItemsMemory';
+import { ActiveTurnBanner } from '../ActiveTurnBanner';
 import { BannerThumb } from '../BannerThumb';
+import { CardWatermark } from '../CardWatermark';
+import { CategoryFilterBar } from '../CategoryFilterBar';
 import { ConfirmModal } from '../ConfirmModal';
+import { FootballSettingsBar } from '../football/FootballSettingsBar';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { TopBar } from '../TopBar';
@@ -32,6 +43,10 @@ interface SpyGameFlowProps {
   players: Player[];
   onApplyDeltas: (deltas: RoundDelta[]) => void;
   onExitToHub: () => void;
+  onTournamentFinish?: (deltas: RoundDelta[]) => void;
+  variant?: 'classic' | 'football';
+  footballSettings?: FootballGlobalSettings;
+  onUpdateFootballSettings?: (next: FootballGlobalSettings) => void;
 }
 
 interface QuestionLink {
@@ -94,7 +109,34 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
   players,
   onApplyDeltas,
   onExitToHub,
+  onTournamentFinish,
+  variant = 'classic',
+  footballSettings,
+  onUpdateFootballSettings,
 }) => {
+  const isFootballMode = variant === 'football';
+  const [fbSettings, setFbSettings] = useState<FootballGlobalSettings>(
+    () => footballSettings ?? DEFAULT_FOOTBALL_SETTINGS
+  );
+  const categorySource = useMemo(() => {
+    const base = isFootballMode
+      ? filterByScope(FOOTBALL_SPY_CATEGORIES, fbSettings.scope)
+      : SPY_CATEGORIES;
+    const custom = getCustomContent();
+    const customList = isFootballMode ? custom.footballNames : custom.words;
+    if (customList.length === 0) return base;
+    const customCat: SpyCategory = {
+      id: isFootballMode ? '__custom_fb_spy__' : '__custom_classic_spy__',
+      name: isFootballMode ? 'أسمائك الخاصة ✍️' : 'كلماتك الخاصة ✍️',
+      color: 'coral',
+      iconType: isFootballMode ? 'sports' : 'daily_life',
+      words: customList,
+    };
+    if (custom.mode === 'custom_only') {
+      return [customCat];
+    }
+    return [customCat, ...base];
+  }, [isFootballMode, fbSettings.scope]);
   const guard = useTapGuard(400);
 
   const maxSpies = players.length >= 6 ? 3 : players.length >= 4 ? 2 : 1;
@@ -102,6 +144,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
   const [phase, setPhase] = useState<SpyPhase>('CATEGORY_SELECT');
   const [discussionMinutes, setDiscussionMinutes] = useState<number>(5);
   const [spyCount, setSpyCount] = useState<number>(1);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<SpyCategory | null>(null);
   const [secretWord, setSecretWord] = useState<string>('');
   const [spyIds, setSpyIds] = useState<string[]>([]);
@@ -198,11 +241,25 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
     return () => window.clearInterval(interval);
   }, [phase, isTimerRunning]);
 
+  const activeSpyCategories = useMemo(
+    () =>
+      selectedCategoryIds.length === 0
+        ? categorySource
+        : categorySource.filter((cat) => selectedCategoryIds.includes(cat.id)),
+    [categorySource, selectedCategoryIds]
+  );
+
+  const totalSpyWords = useMemo(
+    () => activeSpyCategories.reduce((sum, cat) => sum + cat.words.length, 0),
+    [activeSpyCategories]
+  );
+
   const startRoundWithCategory = guard((category: SpyCategory) => {
     soundManager.unlock();
     soundManager.play('next');
 
-    const chosenWord = pickUnseenItem(`spy:${category.id}`, category.words);
+    const unseenPrefix = isFootballMode ? 'fb_spy' : 'spy';
+    const chosenWord = pickUnseenItem(`${unseenPrefix}:${category.id}`, category.words);
 
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const chosenSpies = shuffled.slice(0, effectiveSpyCount).map((p) => p.id);
@@ -232,6 +289,12 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
 
     setPhase('PASS_DEVICE');
   });
+
+  const startRoundFromSelectedFilter = () => {
+    const pool = activeSpyCategories.length > 0 ? activeSpyCategories : categorySource;
+    const chosenCat = pool[Math.floor(Math.random() * pool.length)];
+    startRoundWithCategory(chosenCat);
+  };
 
   const handlePassDeviceNext = guard(() => {
     soundManager.play('click');
@@ -382,14 +445,18 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
       <TopBar
         title={
           phase === 'CATEGORY_SELECT'
-            ? 'اختر القسم'
+            ? isFootballMode
+              ? 'جاسوس الكورة ⚽'
+              : 'اختر القسم'
             : phase === 'VOTING'
               ? 'مرحلة التصويت'
               : phase === 'SPY_FINAL_GUESS'
                 ? 'فرصة الجاسوس الأخيرة'
                 : phase === 'LEADERBOARD'
                   ? 'النتيجة'
-                  : 'الجاسوس (بره القعدة)'
+                  : isFootballMode
+                    ? 'جاسوس الكورة ⚽'
+                    : 'الجاسوس (بره القعدة)'
         }
         exitVariant={isRoundInProgress ? 'home' : 'back'}
         onExit={handleHeaderExit}
@@ -464,30 +531,84 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
               )}
             </div>
 
+            {isFootballMode && (
+              <div className="mb-4">
+                <FootballSettingsBar
+                  settings={fbSettings}
+                  onChange={(next) => {
+                    setFbSettings(next);
+                    setSelectedCategoryIds([]);
+                    onUpdateFootballSettings?.(next);
+                  }}
+                  showRounds={false}
+                  showSeconds={false}
+                />
+              </div>
+            )}
+
+            {/* Multi-select Category Filter Bar */}
+            <div className="mb-4 flex flex-col gap-3">
+              <CategoryFilterBar
+                categories={categorySource.map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  count: c.words.length,
+                }))}
+                selectedIds={selectedCategoryIds}
+                onChange={setSelectedCategoryIds}
+                totalAvailable={totalSpyWords}
+                unitLabel={isFootballMode ? 'لاعب' : 'كلمة'}
+                accentColor={isFootballMode ? 'emerald' : 'coral'}
+              />
+
+              <button
+                type="button"
+                onClick={startRoundFromSelectedFilter}
+                className="w-full min-h-[56px] rounded-2xl bakasa-btn-green text-white text-lg sm:text-xl font-black tracking-wide flex items-center justify-center gap-2 transition-transform"
+              >
+                <Sparkles className="w-5 h-5" />
+                <span>
+                  {selectedCategoryIds.length === 0
+                    ? isFootballMode
+                      ? 'ابدأ عشوائي من كل اللاعيبة!'
+                      : 'ابدأ عشوائي من كل الأقسام!'
+                    : selectedCategoryIds.length === 1
+                      ? `ابدأ ${activeSpyCategories[0]?.name ?? ''}!`
+                      : `ابدأ عشوائي من ${selectedCategoryIds.length} أقسام مختارة!`}
+                </span>
+              </button>
+            </div>
+
             {/* Category Cards */}
             <div className="flex flex-col gap-5">
-              {SPY_CATEGORIES.map((category, idx) => {
+              {activeSpyCategories.map((category, idx) => {
                 const style = BANNER_COLOR_CLASSES[category.color];
                 return (
-                  <button
+                  <div
                     key={category.id}
-                    type="button"
-                    onClick={() => startRoundWithCategory(category)}
-                    className={`group relative overflow-hidden w-full min-h-[72px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} px-4 py-2.5 flex items-center justify-between gap-3 text-right transition-transform active:scale-95 hover:brightness-105`}
+                    className="animate-card-float"
+                    style={{ animationDelay: `${(idx % 5) * 0.45}s` }}
                   >
-                    <div className="pointer-events-none absolute -bottom-5 -left-5 w-20 h-20 rounded-full bg-white/10" />
-                    <div
-                      className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-white/18 to-transparent animate-shimmer-sweep"
-                      style={{ animationDelay: `${(idx % 4) * 1.1}s` }}
-                    />
-                    <div className="relative flex items-center gap-4 min-w-0">
-                      <BannerThumb type={category.iconType} />
-                      <span className="text-xl font-black text-white truncate">
-                        {category.name}
-                      </span>
-                    </div>
-                    <ChevronLeft className="relative w-6 h-6 text-white/90 shrink-0 transition-transform group-hover:-translate-x-1" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => startRoundWithCategory(category)}
+                      className={`group relative overflow-hidden w-full min-h-[72px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card px-4 py-2.5 flex items-center justify-between gap-3 text-right hover:brightness-105`}
+                    >
+                      <CardWatermark kind={category.iconType} />
+                      <div className="pointer-events-none absolute -bottom-5 -left-5 w-20 h-20 rounded-full bg-white/10" />
+                      <div
+                        className="pointer-events-none absolute inset-y-0 w-1/4 bg-gradient-to-r from-transparent via-white/18 to-transparent animate-shimmer-sweep"
+                        style={{ animationDelay: `${(idx % 4) * 1.1}s` }}
+                      />
+                      <div className="relative flex items-center gap-4 min-w-0">
+                        <BannerThumb type={category.iconType} />
+                        <span className="text-xl font-black text-white truncate">
+                          {category.name}
+                        </span>
+                      </div>
+                      <ChevronLeft className="relative w-6 h-6 text-white/90 shrink-0 transition-transform group-hover:-translate-x-1" />
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -496,12 +617,15 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
 
         {/* PHASE 2: PASS DEVICE COVER SCREEN */}
         {phase === 'PASS_DEVICE' && currentPlayer && (
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            <div className="mb-4 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
-              <span>
-                اللاعب {currentPlayerIdx + 1} من {players.length}
-              </span>
-              <span>·</span>
+          <div className="flex-1 flex flex-col items-center justify-center py-4">
+            <ActiveTurnBanner
+              label="دور استلام الكارت:"
+              player={currentPlayer}
+              badgeText={`${currentPlayerIdx + 1} من ${players.length}`}
+              accent="coral"
+            />
+
+            <div className="mb-3 flex items-center gap-2 text-xs font-extrabold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
               <span className="text-[#1E293B] dark:text-[#F8FAFC]">{selectedCategory?.name}</span>
             </div>
 
@@ -536,8 +660,15 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
 
         {/* PHASE 3: ANTI-PEEK HOLD TO REVEAL CARD */}
         {phase === 'REVEAL_CARD' && currentPlayer && (
-          <div className="flex-1 flex flex-col items-center justify-center py-4 no-select">
-            <div className="flex items-center gap-3 mb-5">
+          <div className="flex-1 flex flex-col items-center justify-center py-2 no-select">
+            <ActiveTurnBanner
+              label="اللي بيكشف الكارت دلوقتي:"
+              player={currentPlayer}
+              badgeText={`${currentPlayerIdx + 1} من ${players.length}`}
+              accent="teal"
+            />
+
+            <div className="flex items-center gap-3 mb-4">
               <PlayerAvatar avatarId={currentPlayer.avatarId} name={currentPlayer.name} size="md" />
               <div className="text-right">
                 <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">دور اللاعب</div>
@@ -610,12 +741,16 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                   <div className="text-xs font-extrabold text-[#0D9488] dark:text-[#2DD4BF]">
                     القسم: {selectedCategory?.name}
                   </div>
-                  <div className="text-sm font-bold text-[#475569] dark:text-emerald-200">الكلمة السرية هي:</div>
+                  <div className="text-sm font-bold text-[#475569] dark:text-emerald-200">
+                    {isFootballMode ? 'اللاعب السري هو:' : 'الكلمة السرية هي:'}
+                  </div>
                   <div className="text-3xl sm:text-4xl font-black text-[#1E293B] dark:text-white tracking-wide py-1">
                     {secretWord}
                   </div>
                   <p className="text-xs font-bold text-[#059669] dark:text-emerald-300 mt-1">
-                    اسأل أسئلة ذكية تكشف الجاسوس من غير ما تحرق الكلمة!
+                    {isFootballMode
+                      ? 'اسأل أسئلة ذكية عن النادي أو المنتخب من غير ما تحرق اسم اللاعب!'
+                      : 'اسأل أسئلة ذكية تكشف الجاسوس من غير ما تحرق الكلمة!'}
                   </p>
                 </div>
               )}
@@ -740,8 +875,14 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
 
         {/* PHASE 5: VOTING */}
         {phase === 'VOTING' && currentVoter && (
-          <div className="flex-1 flex flex-col items-center pt-10 pb-4">
-            <div className="relative w-full max-w-md rounded-3xl qada-card px-5 pt-14 pb-6 flex flex-col items-center">
+          <div className="flex-1 flex flex-col items-center pt-2 pb-4">
+            <ActiveTurnBanner
+              label="اللي بيصوّت دلوقتي:"
+              player={currentVoter}
+              badgeText={`${voterIdx + 1} من ${players.length}`}
+              accent="coral"
+            />
+            <div className="mt-8 relative w-full max-w-md rounded-3xl qada-card px-5 pt-14 pb-6 flex flex-col items-center">
               <div className="absolute -top-10 left-1/2 -translate-x-1/2">
                 <PlayerAvatar
                   avatarId={currentVoter.avatarId}
@@ -804,8 +945,8 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
         {/* PHASE 6A: SPY IDENTITY REVEAL */}
         {phase === 'SPY_IDENTITY_REVEAL' && (
           <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6">
-              <div className="w-20 h-20 mx-auto mb-3 rounded-2xl bg-[#FFF1F2] dark:bg-rose-950/60 border-2 border-[#FECDD3] dark:border-rose-800 flex items-center justify-center animate-splash-pop">
+            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6 animate-reveal-3s">
+              <div className="w-20 h-20 mx-auto mb-3 rounded-2xl bg-[#FFF1F2] dark:bg-rose-950/60 border-2 border-[#FECDD3] dark:border-rose-800 flex items-center justify-center">
                 <AnimatedSpyHatSvg variant="alert" className="w-16 h-16" />
               </div>
 
@@ -871,6 +1012,12 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
         {/* PHASE 6B: SPY'S LAST CHANCE MULTIPLE CHOICE GRID */}
         {phase === 'SPY_FINAL_GUESS' && (
           <div className="flex-1 flex flex-col items-center py-2">
+            <ActiveTurnBanner
+              label={spyPlayers.length > 1 ? 'اللي بيخمن دلوقتي (الجواسيس):' : 'اللي بيخمن دلوقتي (الجاسوس):'}
+              player={spyPlayers.length === 1 ? spyPlayers[0] : undefined}
+              playerNameOverride={spyNamesText}
+              accent="rose"
+            />
             <div className="w-full rounded-3xl qada-card p-4 text-center mb-4">
               <div className="text-xs font-extrabold text-[#FF6B4A] mb-1">
                 القسم: {selectedCategory?.name}
@@ -922,7 +1069,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
         {/* PHASE 7: FINAL WORD REVEAL */}
         {phase === 'ROUND_REVEAL' && (
           <div className="flex-1 flex flex-col items-center justify-center py-4 text-center">
-            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6">
+            <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6 animate-reveal-3s">
               <div
                 className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center ${
                   spyGuessedCorrectly
@@ -949,7 +1096,9 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
               </p>
 
               <div className="rounded-2xl bg-[#FFF9F0] dark:bg-[#0F172A] border-2 border-[#E7DEC8] dark:border-[#334155] p-4 mb-5 flex flex-col gap-1.5">
-                <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">الكلمة السرية كانت:</div>
+                <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8]">
+                  {isFootballMode ? 'اللاعب السري كان:' : 'الكلمة السرية كانت:'}
+                </div>
                 <div className="text-3xl font-black text-[#0D9488] dark:text-[#2DD4BF]">{secretWord}</div>
                 <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1">
                   الجاسوس: <span className="text-[#E11D48] dark:text-rose-400 font-black">{spyNamesText}</span>
@@ -1001,9 +1150,16 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
           <LeaderboardScreen
             players={players}
             deltas={roundDeltas}
-            summaryHeadline={`الجاسوس: ${spyNamesText} · الكلمة: ${secretWord}`}
+            summaryHeadline={`الجاسوس: ${spyNamesText} · ${isFootballMode ? 'اللاعب' : 'الكلمة'}: ${secretWord}`}
+            isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={() => setPhase('CATEGORY_SELECT')}
-            onFinishGame={onExitToHub}
+            onFinishGame={() => {
+              if (onTournamentFinish) {
+                onTournamentFinish(roundDeltas);
+              } else {
+                onExitToHub();
+              }
+            }}
           />
         )}
       </main>

@@ -1,9 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Copy, Trophy } from 'lucide-react';
+import { Camera, Check, Copy, Trophy } from 'lucide-react';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
-import { ARCADE_COLORS, ArcadeDelta, ArcadePlayer } from '../../types/arcade';
+import {
+  ARCADE_COLOR_ORDER,
+  ARCADE_COLORS,
+  ArcadeDelta,
+  ArcadePlayer,
+} from '../../types/arcade';
+import { getScoreboardRankMap } from '../../utils/scoreboardMood';
 import { computeArcadeTitles, copyTextToClipboard } from '../../utils/sessionStats';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
+import { shareStoryCardImage } from '../../utils/storyCardShare';
+import { LoserPunishmentCard } from '../LoserPunishmentCard';
+import { PlayerAvatar } from '../PlayerAvatar';
+import { SubtleConfettiBurst } from '../SubtleConfettiBurst';
 
 interface ArcadeLeaderboardScreenProps {
   players: ArcadePlayer[];
@@ -24,12 +34,20 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
 }) => {
   const guard = useTapGuard(400);
   const [copied, setCopied] = useState<boolean>(false);
+  const [selectedDare, setSelectedDare] = useState<string | null>(null);
+  const [storyStatus, setStoryStatus] = useState<'idle' | 'sharing' | 'done'>('idle');
 
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(false), 2200);
     return () => window.clearTimeout(t);
   }, [copied]);
+
+  useEffect(() => {
+    if (storyStatus !== 'done') return;
+    const t = window.setTimeout(() => setStoryStatus('idle'), 2600);
+    return () => window.clearTimeout(t);
+  }, [storyStatus]);
 
   const deltaMap = new Map(deltas.map((d) => [d.playerId, d.delta]));
 
@@ -63,9 +81,49 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
   };
 
   const hasAnyPositiveDelta = deltas.some((d) => d.delta > 0);
+  const hasDistinctLoser =
+    sortedPlayers.length >= 2 &&
+    sortedPlayers[0].score > sortedPlayers[sortedPlayers.length - 1].score;
+  const hasFinalWinner =
+    sortedPlayers.length >= 1 &&
+    (sortedPlayers[0].score > 0 || hasDistinctLoser);
+  const rankMap = getScoreboardRankMap(sortedPlayers);
+  const lowestScore = hasDistinctLoser ? sortedPlayers[sortedPlayers.length - 1].score : null;
+  const lastPlaceIds = new Set(
+    lowestScore !== null
+      ? sortedPlayers.filter((p) => p.score === lowestScore).map((p) => p.id)
+      : []
+  );
+  const loserNames = hasDistinctLoser
+    ? sortedPlayers.filter((p) => lastPlaceIds.has(p.id)).map((p) => p.name)
+    : [];
+
+  const handleShareStory = async () => {
+    if (storyStatus === 'sharing') return;
+    soundManager.unlock();
+    soundManager.play('click');
+    setStoryStatus('sharing');
+    const result = await shareStoryCardImage({
+      headline: summaryHeadline || 'تحدي الشاشة 2D',
+      subtitle: 'تحدي الشاشة 2D',
+      entries: sortedPlayers.map((p) => ({ name: p.name, score: p.score })),
+      loserName: loserNames.length > 0 ? loserNames.join(' و ') : null,
+      dareText: selectedDare,
+    });
+    if (result === 'error') {
+      soundManager.play('error');
+      setStoryStatus('idle');
+    } else {
+      soundManager.play('victory');
+      triggerHaptic(25);
+      setStoryStatus('done');
+    }
+  };
 
   return (
     <div className="w-full max-w-md mx-auto px-4 pb-8 pt-2 flex flex-col items-center">
+      <SubtleConfettiBurst active={hasFinalWinner} />
+
       <div className="w-full rounded-3xl qada-card px-4 py-3 text-center mb-4 flex items-center justify-center gap-2">
         <Trophy className="w-5 h-5 text-[#F59E0B] shrink-0" />
         <p className="text-sm sm:text-base font-black text-[#1E293B] dark:text-[#F8FAFC]">
@@ -81,16 +139,26 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
           const delta = deltaMap.get(player.id) ?? 0;
           const funTitle = arcadeTitles[player.id];
           const showHardluck = hasAnyPositiveDelta && delta <= 0 && index > 0;
+          const isLastPlace = lastPlaceIds.has(player.id);
+          const rankInfo = rankMap.get(player.id);
+          const colorAvatarIdx = Math.max(0, ARCADE_COLOR_ORDER.indexOf(player.colorId));
 
           return (
             <div
               key={player.id}
-              className={`w-full min-h-[68px] rounded-2xl ${theme.bgClass} ${theme.shadowClass} border ${theme.borderClass} px-4 py-2.5 flex items-center justify-between gap-3`}
+              className={`w-full min-h-[68px] rounded-2xl ${theme.bgClass} ${theme.shadowClass} border ${theme.borderClass} px-4 py-2.5 flex items-center justify-between gap-3 ${
+                isLastPlace ? 'ring-3 ring-rose-300/90 dark:ring-rose-400/80' : ''
+              }`}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-black/25 border-2 border-white/75 flex items-center justify-center text-white font-black text-base tabular-nums shrink-0">
-                  {index + 1}
-                </div>
+                <PlayerAvatar
+                  avatarId={colorAvatarIdx}
+                  name={player.name}
+                  size="md"
+                  rank={rankInfo?.rank}
+                  showAllRanks
+                  mood={rankInfo?.mood}
+                />
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span
@@ -99,12 +167,17 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
                     >
                       {player.name}
                     </span>
+                    {isLastPlace && (
+                      <span className="rounded-lg bg-rose-950/80 border border-rose-200/70 px-2 py-0.5 text-[11px] font-black text-rose-100 whitespace-nowrap shadow-sm">
+                        المركز الأخير 😈
+                      </span>
+                    )}
                     {funTitle && (
                       <span className="rounded-lg bg-white/95 border border-white px-2 py-0.5 text-[11px] font-black text-[#1E293B] whitespace-nowrap shadow-sm">
                         {funTitle}
                       </span>
                     )}
-                    {showHardluck && (
+                    {showHardluck && !isLastPlace && (
                       <span className="animate-hardluck-shake inline-block rounded-lg bg-white/95 border border-white px-2 py-0.5 text-[11px] font-black text-[#BE123C] whitespace-nowrap shadow-sm">
                         هاردلك! 😅
                       </span>
@@ -140,25 +213,48 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
         })}
       </div>
 
-      <button
-        type="button"
-        onClick={handleCopySummary}
-        className="w-full max-w-[280px] min-h-[48px] mb-4 rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 border-b-[#D5C7B2] dark:border-b-[#090F1E] text-[#1E293B] dark:text-[#F8FAFC] text-sm font-black flex items-center justify-center gap-2 transition-colors"
-      >
-        {copied ? (
-          <>
-            <Check className="w-4 h-4 text-[#059669] dark:text-[#34D399]" />
-            <span className="text-[#059669] dark:text-[#34D399]">
-              تم النسخ! ابعتها على الواتساب
-            </span>
-          </>
-        ) : (
-          <>
-            <Copy className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24]" />
-            <span>نسخ النتيجة للمشاركة 📋</span>
-          </>
-        )}
-      </button>
+      <LoserPunishmentCard loserNames={loserNames} onDareChange={setSelectedDare} />
+
+      <div className="w-full max-w-[300px] flex flex-col gap-2.5 mb-4">
+        <button
+          type="button"
+          onClick={handleShareStory}
+          disabled={storyStatus === 'sharing'}
+          className="w-full min-h-[48px] rounded-2xl qada-btn-amber text-[#1E293B] text-sm font-black flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-75"
+        >
+          {storyStatus === 'done' ? (
+            <>
+              <Check className="w-4 h-4 text-[#059669]" />
+              <span>تم تجهيز صورة الستوري! 📸</span>
+            </>
+          ) : (
+            <>
+              <Camera className="w-4 h-4" />
+              <span>{storyStatus === 'sharing' ? 'جاري تجهيز الصورة...' : 'صور النتيجة للستوري 📸'}</span>
+            </>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCopySummary}
+          className="w-full min-h-[48px] rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 border-b-[#D5C7B2] dark:border-b-[#090F1E] text-[#1E293B] dark:text-[#F8FAFC] text-sm font-black flex items-center justify-center gap-2 transition-colors"
+        >
+          {copied ? (
+            <>
+              <Check className="w-4 h-4 text-[#059669] dark:text-[#34D399]" />
+              <span className="text-[#059669] dark:text-[#34D399]">
+                تم النسخ! ابعتها على الواتساب
+              </span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24]" />
+              <span>نسخ النتيجة للمشاركة 📋</span>
+            </>
+          )}
+        </button>
+      </div>
 
       <div className="w-full max-w-[260px] flex flex-col gap-3.5">
         <button

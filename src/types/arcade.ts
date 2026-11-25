@@ -1,4 +1,4 @@
-export type ArcadeColorId = 'red' | 'blue' | 'green' | 'yellow';
+export type ArcadeColorId = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange';
 
 export interface ArcadeColorTheme {
   id: ArcadeColorId;
@@ -57,9 +57,39 @@ export const ARCADE_COLORS: Record<ArcadeColorId, ArcadeColorTheme> = {
     borderClass: 'border-[#fef08a]/60',
     shadowClass: 'shadow-[0_5px_0_#b45309,0_8px_16px_rgba(180,83,9,0.16)]',
   },
+  purple: {
+    id: 'purple',
+    name: 'بنفسجي',
+    hex: '#8b5cf6',
+    darkHex: '#5b21b6',
+    lightHex: '#c4b5fd',
+    textOnColor: '#ffffff',
+    bgClass: 'bg-[#8b5cf6]',
+    borderClass: 'border-[#c4b5fd]/50',
+    shadowClass: 'shadow-[0_5px_0_#5b21b6,0_8px_16px_rgba(91,33,182,0.16)]',
+  },
+  orange: {
+    id: 'orange',
+    name: 'برتقالي',
+    hex: '#f97316',
+    darkHex: '#c2410c',
+    lightHex: '#fdba74',
+    textOnColor: '#ffffff',
+    bgClass: 'bg-[#f97316]',
+    borderClass: 'border-[#fdba74]/50',
+    shadowClass: 'shadow-[0_5px_0_#c2410c,0_8px_16px_rgba(194,65,12,0.16)]',
+  },
 };
 
 export const ARCADE_COLOR_ORDER: ArcadeColorId[] = ['red', 'blue', 'green', 'yellow'];
+export const TURN_ARCADE_COLOR_ORDER: ArcadeColorId[] = [
+  'red',
+  'blue',
+  'green',
+  'yellow',
+  'purple',
+  'orange',
+];
 
 export interface ArcadePlayer {
   id: string;
@@ -108,8 +138,8 @@ export function getCornerPlacements(count: number): CornerPlacement[] {
 }
 
 export const DEFAULT_ARCADE_PLAYERS: ArcadePlayer[] = [
-  { id: 'arc_1', name: 'لاعب ١', colorId: 'red', score: 0 },
-  { id: 'arc_2', name: 'لاعب ٢', colorId: 'blue', score: 0 },
-  { id: 'arc_3', name: 'لاعب ٣', colorId: 'green', score: 0 },
-  { id: 'arc_4', name: 'لاعب ٤', colorId: 'yellow', score: 0 },
+  { id: 'arc_1', name: 'مينا منصور', colorId: 'red', score: 0 },
+  { id: 'arc_2', name: 'كيرلس عصام', colorId: 'blue', score: 0 },
+  { id: 'arc_3', name: 'مينا عاطف', colorId: 'green', score: 0 },
+  { id: 'arc_4', name: 'مينا عماد', colorId: 'yellow', score: 0 },
 ];

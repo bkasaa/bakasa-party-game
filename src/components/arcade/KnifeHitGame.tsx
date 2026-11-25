@@ -694,13 +694,13 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
     };
   }, [phase, matchSeconds, resetMatchState, drawScene, stage]);
 
-  // Auto-advance after 2.5s floating inter-round banner
+  // Auto-advance after 3s floating inter-round banner
   useEffect(() => {
     if (phase !== 'INTER_ROUND') return;
     const t = window.setTimeout(() => {
       setStage((prev) => prev + 1);
       setPhase('COUNTDOWN');
-    }, 2500);
+    }, 3000);
     return () => window.clearTimeout(t);
   }, [phase]);
 
@@ -1046,7 +1046,7 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
           roundNum={stage}
           totalRounds={totalRounds}
           headline={summaryText}
-          durationMs={2500}
+          durationMs={3000}
         />
       )}
 
