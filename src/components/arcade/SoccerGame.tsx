@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Goal, Timer, Trophy } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useArcadeTouchLock } from '../../hooks/useArcadeTouchLock';
+import { mapScreenDeltaToLandscape, useForceLandscape } from '../../hooks/useForceLandscape';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import {
   ARCADE_COLORS,
@@ -323,6 +324,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
   const effectiveDuration = winMode === 'goals' ? 180 : matchSeconds;
   const goHome = useGoHome();
   const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
+  const { isRotatedPortrait } = useForceLandscape(isRoundActive);
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -768,13 +770,18 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         drawScene(performance.now());
       }
     };
+    const raf = window.requestAnimationFrame(handleResize);
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
     return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
     };
-  }, [isRoundActive, phase, syncArenaSize, placeKickoffPositions, drawScene]);
+  }, [isRoundActive, isRotatedPortrait, phase, syncArenaSize, placeKickoffPositions, drawScene]);
 
   // Countdown sequence
   useEffect(() => {
@@ -1189,8 +1196,11 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     });
     const j = joysRef.current[playerIdx];
     j.lastValidPull = 0;
-    const rawDx = e.clientX - cx;
-    const rawDy = e.clientY - cy;
+    const { dx: rawDx, dy: rawDy } = mapScreenDeltaToLandscape(
+      e.clientX - cx,
+      e.clientY - cy,
+      isRotatedPortrait
+    );
     lastJoyHapticRef.current[playerIdx] = {
       angle: Math.hypot(rawDx, rawDy) > 1 ? Math.atan2(rawDy, rawDx) : 0,
       time: performance.now(),
@@ -1202,7 +1212,12 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
     e.preventDefault();
-    updateJoy(entry.playerIdx, e.clientX - entry.cx, e.clientY - entry.cy, entry.x, entry.y);
+    const { dx, dy } = mapScreenDeltaToLandscape(
+      e.clientX - entry.cx,
+      e.clientY - entry.cy,
+      isRotatedPortrait
+    );
+    updateJoy(entry.playerIdx, dx, dy, entry.x, entry.y);
   };
 
   const handleJoyUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1386,48 +1401,62 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       )}
 
       {isRoundActive && (
-        <ArcadeFloatingHud
-          secondsLeft={secondsLeft}
-          stageLabel={`مباراة ${currentRound}/${totalRounds}`}
-          muted={muted}
-          onRequestExit={() => setShowExitConfirm(true)}
-        />
-      )}
-
-      {isRoundActive && (
-        <div
-          dir="ltr"
-          className="pointer-events-none fixed top-[36px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-sm border border-white/15 px-3 py-0.5 shadow-md text-[11px] sm:text-xs font-black text-white tabular-nums whitespace-nowrap"
-        >
-          <span className="flex items-center gap-1">
-            <span
-              className="w-2.5 h-2.5 rounded-full border border-white/70"
-              style={{ backgroundColor: leftTeamTheme.hex }}
-            />
-            <span>{leftTeamTheme.name}</span>
-          </span>
-          <span className="text-amber-300 text-xs sm:text-sm">
-            {roundWins[0]} - {roundWins[1]}
-          </span>
-          <span className="flex items-center gap-1">
-            <span>{rightTeamTheme.name}</span>
-            <span
-              className="w-2.5 h-2.5 rounded-full border border-white/70"
-              style={{ backgroundColor: rightTeamTheme.hex }}
-            />
-          </span>
-          <span className="text-white/30">|</span>
-          <span className="text-emerald-300">⚽ {scoreboardText}</span>
-        </div>
-      )}
-
-      {isRoundActive && (
         <div
           ref={arenaRef}
           dir="ltr"
-          style={{ touchAction: 'none' }}
-          className="relative w-full h-full overflow-hidden"
+          style={
+            isRotatedPortrait
+              ? {
+                  width: '100dvh',
+                  height: '100vw',
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                  transformOrigin: 'center center',
+                  touchAction: 'none',
+                }
+              : { touchAction: 'none' }
+          }
+          className={
+            isRotatedPortrait
+              ? 'overflow-hidden bg-[#0f6a29] z-10'
+              : 'relative w-full h-full overflow-hidden'
+          }
         >
+          <ArcadeFloatingHud
+            secondsLeft={secondsLeft}
+            stageLabel={`مباراة ${currentRound}/${totalRounds}`}
+            muted={muted}
+            positionMode="absolute"
+            onRequestExit={() => setShowExitConfirm(true)}
+          />
+
+          <div
+            dir="ltr"
+            className="pointer-events-none absolute top-[36px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-sm border border-white/15 px-3 py-0.5 shadow-md text-[11px] sm:text-xs font-black text-white tabular-nums whitespace-nowrap"
+          >
+            <span className="flex items-center gap-1">
+              <span
+                className="w-2.5 h-2.5 rounded-full border border-white/70"
+                style={{ backgroundColor: leftTeamTheme.hex }}
+              />
+              <span>{leftTeamTheme.name}</span>
+            </span>
+            <span className="text-amber-300 text-xs sm:text-sm">
+              {roundWins[0]} - {roundWins[1]}
+            </span>
+            <span className="flex items-center gap-1">
+              <span>{rightTeamTheme.name}</span>
+              <span
+                className="w-2.5 h-2.5 rounded-full border border-white/70"
+                style={{ backgroundColor: rightTeamTheme.hex }}
+              />
+            </span>
+            <span className="text-white/30">|</span>
+            <span className="text-emerald-300">⚽ {scoreboardText}</span>
+          </div>
+
           <canvas
             ref={canvasRef}
             style={{ touchAction: 'none' }}
@@ -1453,7 +1482,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
           {goalBanner && (
             <div
               dir="rtl"
-              className="pointer-events-none fixed inset-x-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-center px-4 overflow-visible"
+              className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 z-30 flex items-center justify-center px-4 overflow-visible"
             >
               <div
                 style={{

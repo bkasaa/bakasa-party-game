@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Matter from 'matter-js';
-import { ArrowLeft, Layers, RotateCw } from 'lucide-react';
+import { ArrowLeft, Layers } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useArcadeTouchLock } from '../../hooks/useArcadeTouchLock';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
@@ -84,6 +84,19 @@ interface SplashParticle {
   vy: number;
   color: string;
   size: number;
+  life: number;
+}
+
+interface ConfettiPiece {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rot: number;
+  vRot: number;
+  w: number;
+  h: number;
+  color: string;
   life: number;
 }
 
@@ -313,7 +326,9 @@ function drawAnimalSilhouette(
   y: number,
   angle: number,
   alpha = 1,
-  isGhost = false
+  isGhost = false,
+  now = 0,
+  blinkSeed = 0
 ) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -339,19 +354,65 @@ function drawAnimalSilhouette(
     ctx.strokeStyle = isGhost ? playerHex : '#1E293B';
     ctx.stroke();
 
-    // Specular highlight strip on upper half of torso/head
+    // Specular highlight strip on upper half + subtle bottom belly shading
     if (!isGhost && idx <= 1) {
       drawRoundedRect(ctx, rx + 3, ry + 2.5, Math.max(4, p.w - 6), Math.max(3, p.h * 0.28), 3);
       ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fill();
+
+      drawRoundedRect(
+        ctx,
+        rx + 3,
+        ry + p.h - Math.max(4, p.h * 0.22) - 2,
+        Math.max(4, p.w - 6),
+        Math.max(3, p.h * 0.2),
+        3
+      );
+      ctx.fillStyle = 'rgba(15,23,42,0.12)';
       ctx.fill();
     }
   });
 
   ctx.shadowColor = 'transparent';
 
+  // Deterministic natural blink cycle (~every 3.4 seconds for 130ms)
+  const blinkCycle = (now + blinkSeed * 731) % 3400;
+  const isBlinking = !isGhost && blinkCycle < 135;
+
+  const drawExpressiveEye = (ex: number, ey: number, radius = 2.6, irisColor = '#0F172A') => {
+    if (isBlinking) {
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(ex, ey + 0.5, radius, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(ex, ey, radius + 1.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = irisColor;
+      ctx.beginPath();
+      ctx.arc(ex + 0.4, ey, radius, 0, Math.PI * 2);
+      ctx.fill();
+      // Catchlight sparkle
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(ex - 0.5, ey - 0.8, Math.max(0.8, radius * 0.36), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  const drawRosyCheek = (cx: number, cy: number) => {
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.34)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 4.2, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
   // Characteristic details per animal species
   if (spec.id === 'lion') {
-    // Fluffy mane ring + face
     ctx.fillStyle = '#92400E';
     ctx.beginPath();
     ctx.arc(26, -14, 17, 0, Math.PI * 2);
@@ -365,17 +426,13 @@ function drawAnimalSilhouette(
     ctx.arc(27, -14, 11.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Eyes & nose
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(31, -16, 2.1, 0, Math.PI * 2);
-    ctx.fill();
+    drawRosyCheek(29, -9.5);
+    drawExpressiveEye(31, -16, 2.4);
     ctx.fillStyle = '#78350F';
     ctx.beginPath();
     ctx.arc(36, -12, 2.5, 0, Math.PI * 2);
     ctx.fill();
   } else if (spec.id === 'giraffe') {
-    // Giraffe spots
     ctx.fillStyle = spec.secondaryColor;
     [
       [-14, 4, 4.5],
@@ -387,7 +444,6 @@ function drawAnimalSilhouette(
       ctx.arc(sx, sy, sr, 0, Math.PI * 2);
       ctx.fill();
     });
-    // Ossicones + eye
     ctx.strokeStyle = '#78350F';
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -396,12 +452,9 @@ function drawAnimalSilhouette(
     ctx.moveTo(22, -52);
     ctx.lineTo(24, -60);
     ctx.stroke();
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(24, -46, 2.2, 0, Math.PI * 2);
-    ctx.fill();
+    drawRosyCheek(25, -40);
+    drawExpressiveEye(24, -46, 2.3);
   } else if (spec.id === 'elephant') {
-    // Large floppy ear + ivory tusk + eye
     ctx.fillStyle = spec.accentColor;
     ctx.beginPath();
     ctx.ellipse(12, -4, 11, 14, -0.2, 0, Math.PI * 2);
@@ -417,12 +470,9 @@ function drawAnimalSilhouette(
     ctx.quadraticCurveTo(38, 6, 30, 4);
     ctx.fill();
 
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(25, -10, 2.4, 0, Math.PI * 2);
-    ctx.fill();
+    drawRosyCheek(24, -3);
+    drawExpressiveEye(25, -10, 2.5);
   } else if (spec.id === 'bear') {
-    // Bear round ears & muzzle
     ctx.fillStyle = spec.secondaryColor;
     ctx.beginPath();
     ctx.arc(15, -26, 6, 0, Math.PI * 2);
@@ -435,14 +485,11 @@ function drawAnimalSilhouette(
     ctx.fillStyle = '#0F172A';
     ctx.beginPath();
     ctx.arc(32, -13, 2.2, 0, Math.PI * 2);
-    ctx.arc(24, -18, 2, 0, Math.PI * 2);
     ctx.fill();
+    drawRosyCheek(23, -12);
+    drawExpressiveEye(24, -18, 2.2);
   } else if (spec.id === 'rhino') {
-    // Eye + ear
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(31, -7, 2.3, 0, Math.PI * 2);
-    ctx.fill();
+    drawExpressiveEye(31, -7, 2.4);
     ctx.fillStyle = spec.accentColor;
     ctx.beginPath();
     ctx.moveTo(34, -13);
@@ -451,7 +498,6 @@ function drawAnimalSilhouette(
     ctx.closePath();
     ctx.fill();
   } else if (spec.id === 'fox') {
-    // White tail tip + pointy ear + eye
     ctx.fillStyle = spec.accentColor;
     ctx.beginPath();
     ctx.arc(-36, -6, 6, 0, Math.PI * 2);
@@ -463,12 +509,9 @@ function drawAnimalSilhouette(
     ctx.lineTo(28, -19);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(28, -11, 2.1, 0, Math.PI * 2);
-    ctx.fill();
+    drawRosyCheek(26, -6);
+    drawExpressiveEye(28, -11, 2.2);
   } else if (spec.id === 'cat') {
-    // Pointy cat ears & whiskers
     ctx.fillStyle = spec.primaryColor;
     ctx.beginPath();
     ctx.moveTo(12, -19);
@@ -478,12 +521,9 @@ function drawAnimalSilhouette(
     ctx.lineTo(27, -30);
     ctx.lineTo(30, -19);
     ctx.fill();
-    ctx.fillStyle = '#10B981';
-    ctx.beginPath();
-    ctx.arc(24, -11, 2.3, 0, Math.PI * 2);
-    ctx.fill();
+    drawRosyCheek(24, -6);
+    drawExpressiveEye(24, -11, 2.4, '#10B981');
   } else if (spec.id === 'eagle') {
-    // White eagle head + yellow beak + eye
     ctx.fillStyle = '#FFFFFF';
     ctx.beginPath();
     ctx.arc(0, -18, 10, 0, Math.PI * 2);
@@ -500,10 +540,7 @@ function drawAnimalSilhouette(
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    ctx.arc(3, -19, 2, 0, Math.PI * 2);
-    ctx.fill();
+    drawExpressiveEye(3, -19, 2.2);
   }
 
   // Player color badge dot
@@ -571,10 +608,28 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
   // Interactive aiming / camera refs
   const aimXRef = useRef<number>(PLATFORM_X);
   const aimAngleRef = useRef<number>(0);
-  const holdDirRef = useRef<-1 | 0 | 1>(0);
+  const aimTargetAngleRef = useRef<number>(0);
   const cameraYRef = useRef<number>(0);
   const targetCameraYRef = useRef<number>(0);
   const highestStackedYRef = useRef<number>(PLATFORM_Y - PLATFORM_H / 2);
+
+  // Direct touch-drag + tap-to-rotate refs
+  const dragRef = useRef<{
+    pointerId: number | null;
+    startClientX: number;
+    startClientY: number;
+    lastClientX: number;
+    totalMove: number;
+    tappedAnimal: boolean;
+  }>({
+    pointerId: null,
+    startClientX: 0,
+    startClientY: 0,
+    lastClientX: 0,
+    totalMove: 0,
+    tappedAnimal: false,
+  });
+  const lastSkyTapAtRef = useRef<number>(0);
 
   // Turn & round synchronization refs
   const turnIdxRef = useRef<number>(0);
@@ -590,6 +645,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
 
   // VFX
   const splashesRef = useRef<SplashParticle[]>([]);
+  const confettiRef = useRef<ConfettiPiece[]>([]);
   const bannersRef = useRef<FloatingBanner[]>([]);
 
   const isRoundActive = phase === 'PLAYING';
@@ -607,12 +663,13 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       collapseTimerRef.current = null;
     }
     if (engineRef.current) {
+      Matter.Events.off(engineRef.current, 'collisionStart');
       Matter.World.clear(engineRef.current.world, false);
       Matter.Engine.clear(engineRef.current);
       engineRef.current = null;
     }
     metaMapRef.current.clear();
-    holdDirRef.current = 0;
+    dragRef.current.pointerId = null;
   }, []);
 
   useEffect(() => {
@@ -722,6 +779,30 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     });
 
     Matter.World.add(engine.world, platform);
+
+    // Subtle dust puffs on landing impacts
+    Matter.Events.on(engine, 'collisionStart', (event) => {
+      for (const pair of event.pairs) {
+        const dyn = pair.bodyA.isStatic ? pair.bodyB : pair.bodyA;
+        const speed = Math.hypot(dyn.velocity.x, dyn.velocity.y);
+        if (speed < 1.2) continue;
+        const contact = pair.collision.supports?.[0];
+        const cx = contact?.x ?? dyn.position.x;
+        const cy = contact?.y ?? dyn.bounds.max.y;
+        for (let i = 0; i < 6; i++) {
+          splashesRef.current.push({
+            x: cx + (Math.random() - 0.5) * 18,
+            y: cy,
+            vx: (Math.random() - 0.5) * 90,
+            vy: -20 - Math.random() * 65,
+            color: 'rgba(255, 255, 255, 0.85)',
+            size: 2.5 + Math.random() * 3,
+            life: 0.45 + Math.random() * 0.2,
+          });
+        }
+      }
+    });
+
     engineRef.current = engine;
     metaMapRef.current.clear();
 
@@ -734,6 +815,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     roundPointsRef.current = {};
     aimXRef.current = PLATFORM_X;
     aimAngleRef.current = 0;
+    aimTargetAngleRef.current = 0;
     cameraYRef.current = 0;
     targetCameraYRef.current = 0;
     highestStackedYRef.current = PLATFORM_Y - PLATFORM_H / 2;
@@ -741,6 +823,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     settlingElapsedRef.current = 0;
     lastDropBodyIdRef.current = null;
     splashesRef.current = [];
+    confettiRef.current = [];
     bannersRef.current = [];
 
     setTurnIdx(firstTurn);
@@ -812,6 +895,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       currentAnimalRef.current = nextSpec;
       aimXRef.current = PLATFORM_X;
       aimAngleRef.current = 0;
+      aimTargetAngleRef.current = 0;
 
       // Update camera to rise comfortably so active animal spawns high below the HUD with generous drop room
       const { initialHoverY } = getStageMetrics(viewSizeRef.current.w, viewSizeRef.current.h);
@@ -851,17 +935,34 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       ctx.fillStyle = skyGrad;
       ctx.fillRect(0, 0, vw, vh);
 
-      // Parallax clouds
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
+      // Multi-layered parallax clouds
       const cloudParallax = -cameraYRef.current * 0.25 * safeScale;
-      for (let i = 0; i < 6; i++) {
-        const cx = ((i * 195 + now * 0.012 * (i % 2 === 0 ? 1 : 0.7)) % (vw + 160)) - 80;
-        const cy = ((90 + i * 115 + cloudParallax) % (vh + 120)) - 40;
+      for (let i = 0; i < 7; i++) {
+        const layerAlpha = i % 2 === 0 ? 0.8 : 0.55;
+        const speed = i % 2 === 0 ? 0.013 : 0.008;
+        const cx = ((i * 195 + now * speed) % (vw + 180)) - 90;
+        const cy = ((82 + i * 112 + cloudParallax) % (vh + 120)) - 40;
+        ctx.fillStyle = `rgba(255, 255, 255, ${layerAlpha})`;
         ctx.beginPath();
         ctx.arc(cx, cy, 24, 0, Math.PI * 2);
         ctx.arc(cx + 22, cy - 8, 28, 0, Math.PI * 2);
         ctx.arc(cx + 46, cy, 22, 0, Math.PI * 2);
         ctx.fill();
+      }
+
+      // Distant gliding birds in the sky
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.36)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (let b = 0; b < 4; b++) {
+        const bx = ((b * 170 + now * (0.022 + b * 0.004)) % (vw + 120)) - 60;
+        const by = 95 + b * 68 + Math.sin(now * 0.002 + b) * 10;
+        const wingFlap = Math.sin(now * 0.009 + b * 1.7) * 5;
+        ctx.beginPath();
+        ctx.moveTo(bx - 10, by - wingFlap);
+        ctx.quadraticCurveTo(bx - 4, by - 5, bx, by);
+        ctx.quadraticCurveTo(bx + 4, by - 5, bx + 10, by - wingFlap);
+        ctx.stroke();
       }
 
       ctx.save();
@@ -898,7 +999,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       ctx.lineWidth = 2.5;
       ctx.strokeRect(PLATFORM_X - 38, PLATFORM_Y + PLATFORM_H / 2 - 4, 76, 260);
 
-      // Wide stable grassy/wooden platform
+      // Wide stable wooden platform with wood grain lines & knots
       const platLeft = PLATFORM_X - PLATFORM_W / 2;
       const platTop = PLATFORM_Y - PLATFORM_H / 2;
       drawRoundedRect(ctx, platLeft, platTop, PLATFORM_W, PLATFORM_H, 10);
@@ -908,6 +1009,25 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       ctx.strokeStyle = '#451A03';
       ctx.stroke();
 
+      // Wood grain planks & knots
+      ctx.save();
+      ctx.beginPath();
+      drawRoundedRect(ctx, platLeft, platTop, PLATFORM_W, PLATFORM_H, 10);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(69, 26, 3, 0.4)';
+      ctx.lineWidth = 1.6;
+      for (let gx = platLeft + 26; gx < platLeft + PLATFORM_W - 10; gx += 46) {
+        ctx.beginPath();
+        ctx.moveTo(gx, platTop + 12);
+        ctx.lineTo(gx + 12, platTop + PLATFORM_H);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.ellipse(PLATFORM_X - 65, platTop + 21, 9, 3.5, 0.1, 0, Math.PI * 2);
+      ctx.ellipse(PLATFORM_X + 75, platTop + 20, 7, 3, -0.1, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
       // Lush grassy top strip on platform
       drawRoundedRect(ctx, platLeft - 2, platTop - 2, PLATFORM_W + 4, 13, 8);
       ctx.fillStyle = '#22C55E';
@@ -915,6 +1035,24 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       ctx.strokeStyle = '#14532D';
       ctx.lineWidth = 2;
       ctx.stroke();
+
+      // Individual lush grass blades & tiny swaying wildflowers
+      ctx.strokeStyle = '#16A34A';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (let bx = platLeft + 8; bx < platLeft + PLATFORM_W - 8; bx += 16) {
+        const sway = Math.sin(now * 0.003 + bx * 0.1) * 1.8;
+        ctx.beginPath();
+        ctx.moveTo(bx, platTop - 1);
+        ctx.quadraticCurveTo(bx + sway, platTop - 7, bx + sway * 1.4, platTop - 10);
+        ctx.stroke();
+        if (Math.round(bx) % 48 === 0) {
+          ctx.fillStyle = (Math.round(bx / 48) & 1) === 0 ? '#FDE047' : '#F472B6';
+          ctx.beginPath();
+          ctx.arc(bx + sway * 1.4, platTop - 11, 2.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
 
       // Animated Water Hazard at bottom of world
       const waterWave = Math.sin(now * 0.004) * 5;
@@ -946,7 +1084,9 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           body.position.y,
           body.angle,
           1,
-          false
+          false,
+          now,
+          body.id
         );
       }
 
@@ -973,7 +1113,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         ctx.arc(aimXRef.current, hoverY, 4.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Semi-transparent ghost preview + solid active animal bobbing subtly
+        // Solid active animal bobbing subtly with blinking eyes
         const bob = Math.sin(now * 0.006) * 2.5;
         drawAnimalSilhouette(
           ctx,
@@ -982,12 +1122,14 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           aimXRef.current,
           hoverY + bob,
           aimAngleRef.current,
-          0.92,
-          false
+          0.95,
+          false,
+          now,
+          turnIdxRef.current + 1
         );
       }
 
-      // Water splash particles
+      // Water splash & dust particles
       splashesRef.current.forEach((sp) => {
         ctx.save();
         ctx.globalAlpha = Math.max(0, sp.life);
@@ -995,6 +1137,17 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         ctx.beginPath();
         ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
+      });
+
+      // Celebratory confetti bursts on clean settle
+      confettiRef.current.forEach((cf) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, cf.life));
+        ctx.translate(cf.x, cf.y);
+        ctx.rotate(cf.rot);
+        ctx.fillStyle = cf.color;
+        ctx.fillRect(-cf.w / 2, -cf.h / 2, cf.w, cf.h);
         ctx.restore();
       });
 
@@ -1021,12 +1174,10 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       const engine = engineRef.current;
       if (!engine) return;
 
-      // Smooth hold-button horizontal movement during AIMING
-      if (turnStageRef.current === 'AIMING' && holdDirRef.current !== 0) {
-        aimXRef.current = Math.max(
-          MIN_AIM_X,
-          Math.min(MAX_AIM_X, aimXRef.current + holdDirRef.current * 210 * dt)
-        );
+      // Smooth 45-degree rotation interpolation during AIMING
+      if (turnStageRef.current === 'AIMING') {
+        aimAngleRef.current +=
+          (aimTargetAngleRef.current - aimAngleRef.current) * Math.min(1, dt * 18);
       }
 
       // Step Matter.js physics with stable 16.67ms substeps
@@ -1129,8 +1280,26 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         }
 
         if (settleTimerRef.current >= 0.45 || settlingElapsedRef.current >= 3.8) {
-          // Safe placement! Award player points
+          // Safe placement! Award player points + confetti/dust burst
           const activeP = players[turnIdxRef.current];
+          const confettiPalette = ['#FACC15', '#34D399', '#38BDF8', '#F472B6', '#FB923C'];
+          for (let i = 0; i < 16; i++) {
+            const ang = -Math.PI * Math.random();
+            const spd = 70 + Math.random() * 140;
+            confettiRef.current.push({
+              x: aimXRef.current,
+              y: highestY + 12,
+              vx: Math.cos(ang) * spd,
+              vy: Math.sin(ang) * spd - 35,
+              rot: Math.random() * Math.PI * 2,
+              vRot: (Math.random() - 0.5) * 14,
+              w: 6 + Math.random() * 4,
+              h: 4 + Math.random() * 3,
+              color: confettiPalette[i % confettiPalette.length],
+              life: 0.95 + Math.random() * 0.35,
+            });
+          }
+
           if (activeP) {
             const pts = 20 + Math.min(20, Math.floor(meters * 2));
             roundPointsRef.current[activeP.id] = (roundPointsRef.current[activeP.id] ?? 0) + pts;
@@ -1160,6 +1329,17 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         }))
         .filter((s) => s.life > 0);
 
+      confettiRef.current = confettiRef.current
+        .map((c) => ({
+          ...c,
+          x: c.x + c.vx * dt,
+          y: c.y + c.vy * dt,
+          vy: c.vy + 290 * dt,
+          rot: c.rot + c.vRot * dt,
+          life: c.life - dt,
+        }))
+        .filter((c) => c.life > 0);
+
       bannersRef.current = bannersRef.current
         .map((b) => ({ ...b, y: b.y - 26 * dt, life: b.life - dt * 0.9 }))
         .filter((b) => b.life > 0);
@@ -1172,19 +1352,91 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, players, finishRound]);
 
-  // Action Controls
-  const nudgeAim = (dir: -1 | 1) => {
-    if (turnStageRef.current !== 'AIMING') return;
-    aimXRef.current = Math.max(MIN_AIM_X, Math.min(MAX_AIM_X, aimXRef.current + dir * 20));
-    soundManager.play('click');
-    triggerHaptic(12);
-  };
-
+  // Direct Touch-Drag Aiming & Tap-to-Rotate Controls
   const rotateAnimal = () => {
     if (turnStageRef.current !== 'AIMING') return;
-    aimAngleRef.current = (aimAngleRef.current + Math.PI / 4) % (Math.PI * 2);
+    aimTargetAngleRef.current += Math.PI / 4;
     soundManager.play('pop');
     triggerHaptic(15);
+  };
+
+  const handlePlayfieldPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (turnStageRef.current !== 'AIMING' || roundEndedRef.current) return;
+    if (dragRef.current.pointerId !== null) return;
+    e.preventDefault();
+    soundManager.unlock();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic capture failures
+    }
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    const { scale: safeScale, offsetX, baseGroundScreenY, initialHoverY } = getStageMetrics(
+      viewSizeRef.current.w,
+      viewSizeRef.current.h
+    );
+    const worldOriginY =
+      baseGroundScreenY - PLATFORM_Y * safeScale - cameraYRef.current * safeScale;
+    const worldX = (localX - offsetX) / safeScale;
+    const worldY = (localY - worldOriginY) / safeScale;
+    const hoverY = Math.min(initialHoverY, highestStackedYRef.current - DROP_CLEARANCE);
+    const tappedAnimal = Math.hypot(worldX - aimXRef.current, worldY - hoverY) < 76;
+
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      lastClientX: e.clientX,
+      totalMove: 0,
+      tappedAnimal,
+    };
+  };
+
+  const handlePlayfieldPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current.pointerId !== e.pointerId) return;
+    if (turnStageRef.current !== 'AIMING') return;
+    e.preventDefault();
+
+    const { scale: safeScale } = getStageMetrics(viewSizeRef.current.w, viewSizeRef.current.h);
+    const dx = e.clientX - dragRef.current.lastClientX;
+    const stepTotal = Math.hypot(e.clientX - dragRef.current.startClientX, e.clientY - dragRef.current.startClientY);
+    dragRef.current.lastClientX = e.clientX;
+    dragRef.current.totalMove = Math.max(dragRef.current.totalMove, stepTotal);
+
+    aimXRef.current = Math.max(
+      MIN_AIM_X,
+      Math.min(MAX_AIM_X, aimXRef.current + dx / safeScale)
+    );
+  };
+
+  const handlePlayfieldPointerEnd = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (dragRef.current.pointerId !== e.pointerId) return;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
+
+    const { totalMove, tappedAnimal } = dragRef.current;
+    dragRef.current.pointerId = null;
+
+    if (turnStageRef.current === 'AIMING' && totalMove < 12) {
+      const now = performance.now();
+      if (tappedAnimal) {
+        rotateAnimal();
+        lastSkyTapAtRef.current = 0;
+      } else if (now - lastSkyTapAtRef.current < 320) {
+        rotateAnimal();
+        lastSkyTapAtRef.current = 0;
+      } else {
+        lastSkyTapAtRef.current = now;
+      }
+    }
   };
 
   const dropAnimal = () => {
@@ -1202,7 +1454,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       currentAnimalRef.current,
       aimXRef.current,
       spawnY,
-      aimAngleRef.current
+      aimTargetAngleRef.current
     );
 
     metaMapRef.current.set(body.id, {
@@ -1216,7 +1468,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     lastDropBodyIdRef.current = body.id;
     Matter.World.add(engineRef.current.world, body);
 
-    holdDirRef.current = 0;
+    dragRef.current.pointerId = null;
     settleTimerRef.current = 0;
     settlingElapsedRef.current = 0;
     turnStageRef.current = 'SETTLING';
@@ -1268,6 +1520,11 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         >
           <canvas
             ref={canvasRef}
+            onPointerDown={handlePlayfieldPointerDown}
+            onPointerMove={handlePlayfieldPointerMove}
+            onPointerUp={handlePlayfieldPointerEnd}
+            onPointerCancel={handlePlayfieldPointerEnd}
+            onLostPointerCapture={handlePlayfieldPointerEnd}
             style={{ touchAction: 'none' }}
             className="w-full h-full block bg-[#38BDF8]"
           />
@@ -1324,73 +1581,23 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
             })}
           </div>
 
-          {/* Bottom Tactile Control Bar: Move Left, Rotate, Drop, Move Right */}
+          {/* Subtle Drag / Tap Hint + Single Centered Glowing Drop Button */}
           <div
-            dir="ltr"
-            className="fixed bottom-4 inset-x-3 z-30 max-w-lg mx-auto grid grid-cols-4 gap-2"
+            dir="rtl"
+            className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none"
           >
-            <button
-              type="button"
-              disabled={turnStage !== 'AIMING'}
-              onPointerDown={() => {
-                holdDirRef.current = -1;
-                nudgeAim(-1);
-              }}
-              onPointerUp={() => {
-                if (holdDirRef.current === -1) holdDirRef.current = 0;
-              }}
-              onPointerLeave={() => {
-                if (holdDirRef.current === -1) holdDirRef.current = 0;
-              }}
-              onPointerCancel={() => {
-                if (holdDirRef.current === -1) holdDirRef.current = 0;
-              }}
-              className="min-h-[58px] rounded-2xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 disabled:opacity-45 border-2 border-white/30 border-b-4 border-b-black text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl backdrop-blur-md transition-transform"
-            >
-              <span className="text-lg leading-none">⬅️</span>
-              <span>تحريك شمال</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={turnStage !== 'AIMING'}
-              onClick={rotateAnimal}
-              className="min-h-[58px] rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 disabled:opacity-45 border-2 border-amber-200 border-b-4 border-b-amber-700 text-slate-950 font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl transition-transform"
-            >
-              <RotateCw className="w-5 h-5" />
-              <span>تدوير 🔄</span>
-            </button>
-
+            {turnStage === 'AIMING' && (
+              <div className="px-3 py-1 rounded-full bg-slate-950/65 border border-white/20 text-[11px] font-extrabold text-white/95 whitespace-nowrap backdrop-blur-sm">
+                اسحب يمين/شمال للتحريك · المس الحيوان أو نقرتين للتدوير 🔄
+              </div>
+            )}
             <button
               type="button"
               disabled={turnStage !== 'AIMING'}
               onClick={dropAnimal}
-              className="min-h-[58px] rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-45 border-2 border-emerald-200 border-b-4 border-b-emerald-800 text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl transition-transform"
+              className="pointer-events-auto min-w-[210px] min-h-[62px] px-8 rounded-full bg-gradient-to-b from-emerald-400 to-emerald-600 hover:from-emerald-300 hover:to-emerald-500 active:scale-95 disabled:opacity-45 border-2 border-emerald-100 border-b-[5px] border-b-emerald-900 text-white font-black text-lg flex items-center justify-center gap-2 shadow-[0_0_26px_rgba(16,185,129,0.65)] transition-transform"
             >
-              <span className="text-lg leading-none">⬇️</span>
-              <span>إسقاط</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={turnStage !== 'AIMING'}
-              onPointerDown={() => {
-                holdDirRef.current = 1;
-                nudgeAim(1);
-              }}
-              onPointerUp={() => {
-                if (holdDirRef.current === 1) holdDirRef.current = 0;
-              }}
-              onPointerLeave={() => {
-                if (holdDirRef.current === 1) holdDirRef.current = 0;
-              }}
-              onPointerCancel={() => {
-                if (holdDirRef.current === 1) holdDirRef.current = 0;
-              }}
-              className="min-h-[58px] rounded-2xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 disabled:opacity-45 border-2 border-white/30 border-b-4 border-b-black text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl backdrop-blur-md transition-transform"
-            >
-              <span className="text-lg leading-none">➡️</span>
-              <span>تحريك يمين</span>
+              <span>إسقاط ⬇️</span>
             </button>
           </div>
         </div>

@@ -86,6 +86,30 @@ interface ZombieState {
   color: string;
 }
 
+interface HunterEntity {
+  slotIdx: number;
+  playerIdx: number;
+  role: 'seeker' | 'zombie';
+  name: string;
+  hex: string;
+  x: number;
+  y: number;
+  angle: number;
+  walkPhase: number;
+  camX: number;
+  camY: number;
+  catches: number;
+}
+
+interface FootstepMark {
+  x: number;
+  y: number;
+  angle: number;
+  side: -1 | 1;
+  color: string;
+  life: number;
+}
+
 interface BurstEffect {
   x: number;
   y: number;
@@ -100,17 +124,17 @@ const PLAYER_R = 20;
 const HIDE_SECONDS = 25;
 const HIDER_SPEED = 310;
 const SEEKER_SPEED = 325;
-const ZOMBIE_SPEED = 225;
+const ZOMBIE_SPEED = 295;
 
-// Balanced Dark-mode flashlight blocked cleanly by all maze walls & sight-blocking props
-const DARK_FLASHLIGHT_HALF_FOV = 0.45; // ~51° focused cone
-const DARK_FLASHLIGHT_RANGE = 360;
+// Softer twilight dark mode with wider, clearer wall-occluded flashlight
+const DARK_FLASHLIGHT_HALF_FOV = 0.56;
+const DARK_FLASHLIGHT_RANGE = 430;
 const NORMAL_SIGHT_RANGE = 560;
 const HIDE_INTERACT_DIST = 96;
 const INSPECT_INTERACT_DIST = 112;
-const MAX_ZOMBIES = 4;
+const MAX_ZOMBIES = 3; // 1 Seeker + up to 3 human Zombie players = max 4 live split-screen viewports
 
-const SEARCH_TIME_OPTIONS = [90, 120, 150];
+const SEARCH_TIME_OPTIONS = [180, 240, 300];
 
 const MODE_CONFIG: Record<
   KhlawisMode,
@@ -124,14 +148,14 @@ const MODE_CONFIG: Record<
   },
   dark: {
     title: 'مود الضلمة 🔦',
-    subtitle: 'النور مقطوع تماماً! الباحث معاه كشاف فقط وبيتحجب بالحيطان والزوايا.',
-    badge: 'ظلام دامس + كشاف',
+    subtitle: 'إضاءة خافتة في المكان! الباحث معاه كشاف واسع وواضح بيتحجب بالحيطان والزوايا.',
+    badge: 'ظلام خفيف + كشاف واضح',
     emoji: '🔦',
   },
   zombie: {
     title: 'مود الزومبي 🧟‍♂️',
-    subtitle: 'اللي يتمسك بيتحول لزومبي ذكي (حتى ٤) يدور في الممرات والغرف مع الباحث!',
-    badge: 'زومبي مطارد',
+    subtitle: 'اللي يتمسك بيتحول لزومبي بشري والشاشة بتتقسم تلقائياً (حتى ٤ لاعبين) يطاردوا مع الباحث!',
+    badge: 'شاشة مقسمة حتى ٤ لاعبين',
     emoji: '🧟‍♂️',
   },
 };
@@ -455,14 +479,19 @@ function drawFurnitureItem(
   f: MazeFurniture,
   highlighted: boolean,
   searchedRecently: boolean,
+  now: number,
   hiderInsideSelfBadge?: string | null
 ) {
   ctx.save();
 
-  // Soft floor shadow
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.2)';
+  // Deep two-layer soft floor shadow
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';
   ctx.beginPath();
-  ctx.roundRect(f.x + 6, f.y + 8, f.w, f.h, 12);
+  ctx.roundRect(f.x + 8, f.y + 11, f.w, f.h, 14);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+  ctx.beginPath();
+  ctx.roundRect(f.x + 4, f.y + 6, f.w, f.h, 12);
   ctx.fill();
 
   if (highlighted) {
@@ -737,6 +766,52 @@ function drawFurnitureItem(
       ctx.fill();
       break;
     }
+    case 'hospital_monitor': {
+      ctx.fillStyle = '#1E293B';
+      ctx.beginPath();
+      ctx.roundRect(f.x, f.y, f.w, f.h, 9);
+      ctx.fill();
+      ctx.strokeStyle = '#64748B';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Glowing dark screen + animated ECG pulse waveform
+      const sx = f.x + 6;
+      const sy = f.y + 6;
+      const sw = f.w - 12;
+      const sh = f.h - 14;
+      ctx.fillStyle = '#020617';
+      ctx.beginPath();
+      ctx.roundRect(sx, sy, sw, sh, 5);
+      ctx.fill();
+
+      const midY = sy + sh * 0.55;
+      const scan = ((now * 0.05) % sw);
+      ctx.strokeStyle = f.accentColor;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx + 2, midY);
+      ctx.lineTo(sx + sw * 0.28, midY);
+      ctx.lineTo(sx + sw * 0.36, midY - sh * 0.32);
+      ctx.lineTo(sx + sw * 0.44, midY + sh * 0.26);
+      ctx.lineTo(sx + sw * 0.52, midY - sh * 0.14);
+      ctx.lineTo(sx + sw * 0.62, midY);
+      ctx.lineTo(sx + sw - 2, midY);
+      ctx.stroke();
+
+      // Blinking pulse dot sweeping across ECG line
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(sx + scan, midY, 2.3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Status LED
+      ctx.fillStyle = Math.floor(now / 450) % 2 === 0 ? f.accentColor : '#334155';
+      ctx.beginPath();
+      ctx.arc(f.x + f.w - 9, f.y + f.h - 5, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
     default: {
       // Table / Kitchen counter / Desk
       ctx.fillStyle = f.primaryColor;
@@ -783,7 +858,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   const [phase, setPhase] = useState<KhlawisPhase>('SETUP');
   const [selectedMapId, setSelectedMapId] = useState<MazeMapId>('apartment');
   const [mode, setMode] = useState<KhlawisMode>('normal');
-  const [huntSeconds, setHuntSeconds] = useState<number>(120);
+  const [huntSeconds, setHuntSeconds] = useState<number>(180);
   const [seekerPlayerIdx, setSeekerPlayerIdx] = useState<number>(() =>
     Math.floor(Math.random() * players.length)
   );
@@ -796,17 +871,28 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   const [caughtCountUI, setCaughtCountUI] = useState<number>(0);
   const [totalHidersUI, setTotalHidersUI] = useState<number>(Math.max(1, players.length - 1));
   const [nearbyFurn, setNearbyFurn] = useState<{ id: string; label: string } | null>(null);
+  const [hunterNearbyFurns, setHunterNearbyFurns] = useState<Array<{ id: string; label: string } | null>>([
+    null,
+    null,
+    null,
+    null,
+  ]);
+  const [activeHunterCount, setActiveHunterCount] = useState<number>(1);
+  const [hunterBadges, setHunterBadges] = useState<
+    Array<{ name: string; hex: string; role: 'seeker' | 'zombie'; room: string }>
+  >([]);
   const [isCurrentHidden, setIsCurrentHidden] = useState<boolean>(false);
   const [currentRoomLabel, setCurrentRoomLabel] = useState<string>('الممر الرئيسي 🚪');
 
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
   const [winnerPlayers, setWinnerPlayers] = useState<ArcadePlayer[]>([]);
   const [summaryHeadline, setSummaryHeadline] = useState<string>('');
-  const [joyVisual, setJoyVisual] = useState<{ kx: number; ky: number; active: boolean }>({
-    kx: 0,
-    ky: 0,
-    active: false,
-  });
+  const [joyVisuals, setJoyVisuals] = useState<Array<{ kx: number; ky: number; active: boolean }>>([
+    { kx: 0, ky: 0, active: false },
+    { kx: 0, ky: 0, active: false },
+    { kx: 0, ky: 0, active: false },
+    { kx: 0, ky: 0, active: false },
+  ]);
 
   const activeMap = useMemo<MazeMapDefinition>(() => KHLAWIS_MAPS[selectedMapId], [selectedMapId]);
   const occluderSegments = useMemo<Segment[]>(() => buildOccluderSegments(activeMap), [activeMap]);
@@ -816,30 +902,29 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   const viewSizeRef = useRef<{ w: number; h: number }>({ w: 390, h: 760 });
   const cameraRef = useRef<{ x: number; y: number }>({ x: 1000, y: 1000 });
 
-  const seekerStateRef = useRef<{
-    x: number;
-    y: number;
-    angle: number;
-    walkPhase: number;
-  }>({
-    x: activeMap.seekerSpawn.x,
-    y: activeMap.seekerSpawn.y,
-    angle: -Math.PI / 2,
-    walkPhase: 0,
-  });
+  const huntersRef = useRef<HunterEntity[]>([]);
   const hidersRef = useRef<HiderState[]>([]);
   const zombiesRef = useRef<ZombieState[]>([]);
+  const footstepsRef = useRef<FootstepMark[]>([]);
   const burstsRef = useRef<BurstEffect[]>([]);
   const searchedUntilMapRef = useRef<Record<string, number>>({});
 
-  // Strictly fixed base joystick refs (isolated single pointerId)
-  const joyVecRef = useRef<{ dx: number; dy: number; active: boolean }>({
-    dx: 0,
-    dy: 0,
-    active: false,
-  });
-  const activePointerIdRef = useRef<number | null>(null);
-  const joyOriginRef = useRef<{ cx: number; cy: number }>({ cx: 0, cy: 0 });
+  // Strictly fixed base multi-touch joystick slots (up to 4 isolated pointerIds for dynamic split-screen)
+  const hunterJoysRef = useRef<
+    Array<{
+      pointerId: number | null;
+      cx: number;
+      cy: number;
+      dx: number;
+      dy: number;
+      active: boolean;
+    }>
+  >([
+    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+  ]);
 
   const secondsLeftRef = useRef<number>(secondsLeft);
   const roundEndedRef = useRef<boolean>(false);
@@ -889,9 +974,18 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   );
 
   const clearJoystick = useCallback(() => {
-    activePointerIdRef.current = null;
-    joyVecRef.current = { dx: 0, dy: 0, active: false };
-    setJoyVisual({ kx: 0, ky: 0, active: false });
+    hunterJoysRef.current.forEach((slot) => {
+      slot.pointerId = null;
+      slot.dx = 0;
+      slot.dy = 0;
+      slot.active = false;
+    });
+    setJoyVisuals([
+      { kx: 0, ky: 0, active: false },
+      { kx: 0, ky: 0, active: false },
+      { kx: 0, ky: 0, active: false },
+      { kx: 0, ky: 0, active: false },
+    ]);
   }, []);
 
   const currentHiderPlayerIdx = hiderQueue[hideStep] ?? 0;
@@ -914,8 +1008,15 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         if (!hState.caught) {
           return { playerId: p.id, delta: 100 };
         }
+        const zombieHunter = huntersRef.current.find(
+          (ht) => ht.role === 'zombie' && ht.playerIdx === idx
+        );
+        const zombieAssistBonus = zombieHunter ? zombieHunter.catches * 15 : 0;
         const survived = Math.max(0, huntSeconds - (hState.caughtAtSec ?? 0));
-        return { playerId: p.id, delta: Math.min(55, Math.round(survived * 0.7)) };
+        return {
+          playerId: p.id,
+          delta: Math.min(75, Math.round(survived * 0.45) + zombieAssistBonus),
+        };
       });
 
       onApplyDeltas(deltas);
@@ -990,16 +1091,36 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
       activeMap,
       false
     );
-    seekerStateRef.current = {
+    const seekerEntity: HunterEntity = {
+      slotIdx: 0,
+      playerIdx: seekerPlayerIdx,
+      role: 'seeker',
+      name: players[seekerPlayerIdx]?.name ?? 'الباحث',
+      hex: playerHexes[seekerPlayerIdx] ?? '#EF4444',
       x: safeSeeker.x,
       y: safeSeeker.y,
       angle: -Math.PI / 2,
       walkPhase: 0,
+      camX: Math.max(0, safeSeeker.x - 200),
+      camY: Math.max(0, safeSeeker.y - 300),
+      catches: 0,
     };
+    huntersRef.current = [seekerEntity];
     zombiesRef.current = [];
+    footstepsRef.current = [];
     burstsRef.current = [];
     searchedUntilMapRef.current = {};
 
+    setActiveHunterCount(1);
+    setHunterBadges([
+      {
+        name: seekerEntity.name,
+        hex: seekerEntity.hex,
+        role: 'seeker',
+        room: getCurrentRoomName(seekerEntity.x, seekerEntity.y, activeMap),
+      },
+    ]);
+    setHunterNearbyFurns([null, null, null, null]);
     setHiderQueue(q);
     setHideStep(0);
     setCaughtCountUI(0);
@@ -1116,78 +1237,107 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     });
   }, [phase, currentHiderPlayerIdx, activeMap, clearJoystick]);
 
-  // Seeker Inspect Nearby Furniture Action
-  const handleInspectFurniture = useCallback(() => {
-    if (phase !== 'SEEK_ACTIVE' || roundEndedRef.current) return;
-    const sk = seekerStateRef.current;
-    const near = findNearestHideableFurniture(sk.x, sk.y, INSPECT_INTERACT_DIST, activeMap);
-    if (!near) return;
+  // Helper: Infect caught hider into playable human Zombie hunter (dynamic 1->2->3->4 split-screen)
+  const infectHiderToSplitZombie = useCallback(
+    (h: HiderState, spawnX: number, spawnY: number) => {
+      if (mode !== 'zombie') return;
+      if (huntersRef.current.length >= 1 + MAX_ZOMBIES) return;
+      if (huntersRef.current.some((ht) => ht.playerIdx === h.playerIdx)) return;
 
-    const now = performance.now();
-    searchedUntilMapRef.current[near.id] = now + 2600;
-    const hiddenInside = hidersRef.current.filter(
-      (h) => !h.caught && h.hiddenInId === near.id
-    );
+      const slotIdx = huntersRef.current.length;
+      const pName = players[h.playerIdx]?.name ?? `زومبي ${slotIdx}`;
+      const newHunter: HunterEntity = {
+        slotIdx,
+        playerIdx: h.playerIdx,
+        role: 'zombie',
+        name: pName,
+        hex: '#84CC16',
+        x: spawnX,
+        y: spawnY,
+        angle: 0,
+        walkPhase: 0,
+        camX: Math.max(0, spawnX - 180),
+        camY: Math.max(0, spawnY - 180),
+        catches: 0,
+      };
+      huntersRef.current.push(newHunter);
+      setActiveHunterCount(huntersRef.current.length);
+      burstsRef.current.push({
+        x: spawnX,
+        y: spawnY - 36,
+        text: `${pName} تحول لزومبي! الشاشة اتقسمت 🧟‍♂️`,
+        color: '#84CC16',
+        life: 1.7,
+      });
+    },
+    [mode, players]
+  );
 
-    if (hiddenInside.length > 0) {
-      hiddenInside.forEach((h) => {
-        h.caught = true;
-        h.hiddenInId = null;
-        h.caughtAtSec = secondsLeftRef.current;
-        const exitPos = getSafeExitSpotNearFurniture(near, activeMap);
-        h.x = exitPos.x;
-        h.y = exitPos.y;
+  // Hunter Inspect Nearby Furniture Action (per-viewport in split-screen!)
+  const handleInspectFurniture = useCallback(
+    (hunterSlotIdx = 0) => {
+      if (phase !== 'SEEK_ACTIVE' || roundEndedRef.current) return;
+      const hunter = huntersRef.current[hunterSlotIdx];
+      if (!hunter) return;
 
-        soundManager.play('catch');
-        triggerHaptic([35, 30, 45]);
-        burstsRef.current.push({
-          x: near.x + near.w / 2,
-          y: near.y - 10,
-          text: `مسكت ${players[h.playerIdx]?.name ?? ''}! 😱`,
-          color: '#FACC15',
-          life: 1.5,
-        });
+      const near = findNearestHideableFurniture(
+        hunter.x,
+        hunter.y,
+        INSPECT_INTERACT_DIST,
+        activeMap
+      );
+      if (!near) return;
 
-        if (mode === 'zombie' && zombiesRef.current.length < MAX_ZOMBIES) {
-          zombiesRef.current.push({
-            id: Date.now() + h.playerIdx,
-            x: exitPos.x,
-            y: exitPos.y,
-            angle: 0,
-            walkPhase: 0,
-            waypointIdx: Math.floor(Math.random() * activeMap.patrolWaypoints.length),
-            stuckTimer: 0,
-            color: '#65A30D',
-          });
+      const now = performance.now();
+      searchedUntilMapRef.current[near.id] = now + 2600;
+      const hiddenInside = hidersRef.current.filter(
+        (h) => !h.caught && h.hiddenInId === near.id
+      );
+
+      if (hiddenInside.length > 0) {
+        hiddenInside.forEach((h) => {
+          h.caught = true;
+          h.hiddenInId = null;
+          h.caughtAtSec = secondsLeftRef.current;
+          hunter.catches += 1;
+          const exitPos = getSafeExitSpotNearFurniture(near, activeMap);
+          h.x = exitPos.x;
+          h.y = exitPos.y;
+
+          soundManager.play('catch');
+          triggerHaptic([35, 30, 45]);
           burstsRef.current.push({
-            x: exitPos.x,
-            y: exitPos.y - 34,
-            text: 'تحول لزومبي! 🧟‍♂️',
-            color: '#84CC16',
+            x: near.x + near.w / 2,
+            y: near.y - 10,
+            text: `مسكت ${players[h.playerIdx]?.name ?? ''}! 😱`,
+            color: '#FACC15',
             life: 1.5,
           });
+
+          infectHiderToSplitZombie(h, exitPos.x, exitPos.y);
+        });
+
+        const totalCaught = hidersRef.current.filter((h) => h.caught).length;
+        setCaughtCountUI(totalCaught);
+        if (totalCaught >= hidersRef.current.length) {
+          window.setTimeout(() => finalizeRound(true), 650);
         }
-      });
-
-      const totalCaught = hidersRef.current.filter((h) => h.caught).length;
-      setCaughtCountUI(totalCaught);
-      if (totalCaught >= hidersRef.current.length) {
-        window.setTimeout(() => finalizeRound(true), 650);
+      } else {
+        soundManager.play('whoosh');
+        triggerHaptic(18);
+        burstsRef.current.push({
+          x: near.x + near.w / 2,
+          y: near.y - 14,
+          text: 'المكان فاضي! 😅',
+          color: '#BAE6FD',
+          life: 1.25,
+        });
       }
-    } else {
-      soundManager.play('whoosh');
-      triggerHaptic(18);
-      burstsRef.current.push({
-        x: near.x + near.w / 2,
-        y: near.y - 14,
-        text: 'المكان فاضي! 😅',
-        color: '#BAE6FD',
-        life: 1.25,
-      });
-    }
-  }, [phase, activeMap, players, mode, finalizeRound]);
+    },
+    [phase, activeMap, players, infectHiderToSplitZombie, finalizeRound]
+  );
 
-  // Main Simulation + Camera + Maze Renderer Loop
+  // Main Simulation + Dynamic Split-Screen Camera + Rich Maze Renderer Loop
   useEffect(() => {
     if (phase !== 'HIDE_ACTIVE' && phase !== 'SEEK_ACTIVE') return;
 
@@ -1196,40 +1346,64 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     let lastUiSync = 0;
 
     // Snap camera immediately on entering HIDE_ACTIVE or SEEK_ACTIVE
-    const initTarget =
-      phase === 'HIDE_ACTIVE'
-        ? hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx) ??
-          activeMap.seekerSpawn
-        : seekerStateRef.current;
     const vw0 = viewSizeRef.current.w;
     const vh0 = viewSizeRef.current.h;
     const scale0 = Math.max(0.72, Math.min(1.05, Math.min(vw0, vh0) / 520));
     const vww0 = vw0 / scale0;
     const vwh0 = vh0 / scale0;
-    cameraRef.current = {
-      x: Math.max(0, Math.min(WORLD_W - vww0, initTarget.x - vww0 / 2)),
-      y: Math.max(0, Math.min(WORLD_H - vwh0, initTarget.y - vwh0 / 2)),
+
+    if (phase === 'HIDE_ACTIVE') {
+      const initTarget =
+        hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx) ??
+        activeMap.seekerSpawn;
+      cameraRef.current = {
+        x: Math.max(0, Math.min(WORLD_W - vww0, initTarget.x - vww0 / 2)),
+        y: Math.max(0, Math.min(WORLD_H - vwh0, initTarget.y - vwh0 / 2)),
+      };
+    } else {
+      huntersRef.current.forEach((ht) => {
+        ht.camX = Math.max(0, Math.min(WORLD_W - vww0, ht.x - vww0 / 2));
+        ht.camY = Math.max(0, Math.min(WORLD_H - vwh0, ht.y - vwh0 / 2));
+      });
+    }
+
+    const computeViewports = (count: number, vw: number, vh: number) => {
+      if (count <= 1) {
+        return [{ x: 0, y: 0, w: vw, h: vh }];
+      }
+      if (count === 2) {
+        return [
+          { x: 0, y: 0, w: vw, h: vh / 2 },
+          { x: 0, y: vh / 2, w: vw, h: vh / 2 },
+        ];
+      }
+      if (count === 3) {
+        return [
+          { x: 0, y: 0, w: vw / 2, h: vh / 2 },
+          { x: vw / 2, y: 0, w: vw / 2, h: vh / 2 },
+          { x: 0, y: vh / 2, w: vw, h: vh / 2 },
+        ];
+      }
+      return [
+        { x: 0, y: 0, w: vw / 2, h: vh / 2 },
+        { x: vw / 2, y: 0, w: vw / 2, h: vh / 2 },
+        { x: 0, y: vh / 2, w: vw / 2, h: vh / 2 },
+        { x: vw / 2, y: vh / 2, w: vw / 2, h: vh / 2 },
+      ];
     };
 
-    const drawWorld = (now: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const { w: vw, h: vh } = viewSizeRef.current;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const scale = Math.max(0.72, Math.min(1.05, Math.min(vw, vh) / 520));
-      const viewWorldW = vw / scale;
-      const viewWorldH = vh / scale;
-
-      const focusTarget =
-        phase === 'HIDE_ACTIVE'
-          ? hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx) ??
-            activeMap.seekerSpawn
-          : seekerStateRef.current;
+    const renderSingleViewport = (
+      ctx: CanvasRenderingContext2D,
+      now: number,
+      vp: { x: number; y: number; w: number; h: number },
+      focusTarget: { x: number; y: number },
+      camState: { camX: number; camY: number },
+      viewerHunter: HunterEntity | null,
+      isSplit: boolean
+    ) => {
+      const baseScale = Math.max(0.68, Math.min(1.02, Math.min(vp.w, vp.h) / (isSplit ? 380 : 520)));
+      const viewWorldW = vp.w / baseScale;
+      const viewWorldH = vp.h / baseScale;
 
       const targetCamX = Math.max(
         0,
@@ -1239,20 +1413,25 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         0,
         Math.min(WORLD_H - viewWorldH, focusTarget.y - viewWorldH / 2)
       );
-      cameraRef.current.x += (targetCamX - cameraRef.current.x) * 0.14;
-      cameraRef.current.y += (targetCamY - cameraRef.current.y) * 0.14;
+      camState.camX += (targetCamX - camState.camX) * 0.16;
+      camState.camY += (targetCamY - camState.camY) * 0.16;
 
-      const camX = cameraRef.current.x;
-      const camY = cameraRef.current.y;
-
-      ctx.fillStyle = activeMap.ambientBg;
-      ctx.fillRect(0, 0, vw, vh);
+      const camX = camState.camX;
+      const camY = camState.camY;
 
       ctx.save();
-      ctx.scale(scale, scale);
+      ctx.beginPath();
+      ctx.rect(vp.x, vp.y, vp.w, vp.h);
+      ctx.clip();
+
+      ctx.fillStyle = activeMap.ambientBg;
+      ctx.fillRect(vp.x, vp.y, vp.w, vp.h);
+
+      ctx.translate(vp.x, vp.y);
+      ctx.scale(baseScale, baseScale);
       ctx.translate(-camX, -camY);
 
-      // 1. Room Floors + Theme Patterns + Rugs
+      // 1. Room Floors + Theme Patterns + Fringed Rugs + Plaques
       for (const room of activeMap.rooms) {
         if (
           room.x + room.w < camX - 40 ||
@@ -1271,7 +1450,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         ctx.clip();
 
         if (room.pattern === 'wood') {
-          ctx.strokeStyle = 'rgba(146, 64, 14, 0.12)';
+          ctx.strokeStyle = 'rgba(146, 64, 14, 0.13)';
           ctx.lineWidth = 2;
           for (let py = room.y; py < room.y + room.h; py += 44) {
             ctx.beginPath();
@@ -1296,7 +1475,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             }
           }
         } else if (room.pattern === 'hospital_tile') {
-          ctx.strokeStyle = 'rgba(14, 116, 144, 0.12)';
+          ctx.strokeStyle = 'rgba(14, 116, 144, 0.13)';
           ctx.lineWidth = 2;
           for (let py = room.y; py < room.y + room.h; py += 64) {
             ctx.beginPath();
@@ -1357,23 +1536,84 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           }
         }
 
+        // Fringed patterned carpet
         if (room.rug) {
-          ctx.fillStyle = room.rug.color;
+          const r = room.rug;
+          ctx.fillStyle = r.color;
           ctx.beginPath();
-          ctx.roundRect(room.rug.x, room.rug.y, room.rug.w, room.rug.h, 24);
+          ctx.roundRect(r.x, r.y, r.w, r.h, 24);
           ctx.fill();
-          ctx.strokeStyle = room.rug.border;
+          ctx.strokeStyle = r.border;
           ctx.lineWidth = 6;
           ctx.stroke();
+
+          // Inner stitched border
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 6]);
+          ctx.strokeRect(r.x + 14, r.y + 14, r.w - 28, r.h - 28);
+          ctx.setLineDash([]);
+
+          // Fringe tassels on left and right edges
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+          ctx.lineWidth = 2.4;
+          for (let fy = r.y + 22; fy <= r.y + r.h - 22; fy += 14) {
+            ctx.beginPath();
+            ctx.moveTo(r.x - 10, fy);
+            ctx.lineTo(r.x, fy);
+            ctx.moveTo(r.x + r.w, fy);
+            ctx.lineTo(r.x + r.w + 10, fy);
+            ctx.stroke();
+          }
         }
 
-        // Subtle watermarked Room Name on floor
-        ctx.font = '900 30px Cairo, sans-serif';
+        // Subtle glowing room sign plaque
+        ctx.font = '900 22px Cairo, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.12)';
-        ctx.fillText(room.name, room.x + room.w / 2, room.y + room.h / 2);
+        const plaqueW = Math.min(room.w - 40, Math.max(180, ctx.measureText(room.name).width + 36));
+        const px = room.x + room.w / 2 - plaqueW / 2;
+        const py = room.y + room.h / 2 - 22;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
+        ctx.beginPath();
+        ctx.roundRect(px, py, plaqueW, 38, 18);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.fillText(room.name, room.x + room.w / 2, room.y + room.h / 2 + 4);
 
         ctx.restore();
+      }
+
+      // 1b. Factory Yellow/Black Warning Stripe Zones
+      if (activeMap.hazardZones) {
+        for (const hz of activeMap.hazardZones) {
+          if (
+            hz.x + hz.w < camX - 20 ||
+            hz.x > camX + viewWorldW + 20 ||
+            hz.y + hz.h < camY - 20 ||
+            hz.y > camY + viewWorldH + 20
+          ) {
+            continue;
+          }
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(hz.x, hz.y, hz.w, hz.h);
+          ctx.clip();
+          ctx.strokeStyle = 'rgba(250, 204, 21, 0.38)';
+          ctx.lineWidth = 10;
+          for (let sx = hz.x - hz.h; sx < hz.x + hz.w + hz.h; sx += 28) {
+            ctx.beginPath();
+            ctx.moveTo(sx, hz.y + hz.h);
+            ctx.lineTo(sx + hz.h, hz.y);
+            ctx.stroke();
+          }
+          ctx.strokeStyle = 'rgba(24, 24, 27, 0.35)';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(hz.x + 1.5, hz.y + 1.5, hz.w - 3, hz.h - 3);
+          ctx.restore();
+        }
       }
 
       // 2. Door Frames
@@ -1392,6 +1632,19 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         }
       });
 
+      // 2b. Animated Fading Footsteps on floor
+      footstepsRef.current.forEach((fp) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, fp.life * 0.45);
+        ctx.translate(fp.x, fp.y);
+        ctx.rotate(fp.angle);
+        ctx.fillStyle = fp.color;
+        ctx.beginPath();
+        ctx.ellipse(0, fp.side * 6, 4.5, 2.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
       // 3. Detailed Furniture / Props
       const activeHiderObj =
         phase === 'HIDE_ACTIVE'
@@ -1404,6 +1657,14 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         activeMap
       );
       activeMap.furniture.forEach((f) => {
+        if (
+          f.x + f.w < camX - 40 ||
+          f.x > camX + viewWorldW + 40 ||
+          f.y + f.h < camY - 40 ||
+          f.y > camY + viewWorldH + 40
+        ) {
+          return;
+        }
         const searchedRecently = (searchedUntilMapRef.current[f.id] ?? 0) > now;
         const selfHiddenHere =
           phase === 'HIDE_ACTIVE' && activeHiderObj?.hiddenInId === f.id
@@ -1414,23 +1675,34 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           f,
           nearCheck?.id === f.id || Boolean(selfHiddenHere),
           searchedRecently,
+          now,
           selfHiddenHere
         );
       });
 
-      // 4. Crisp 2.5D Maze Walls
+      // 4. Crisp 2.5D Maze Walls with Baseboard Trims
       activeMap.walls.forEach((w) => {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.24)';
+        if (
+          w.x + w.w < camX - 30 ||
+          w.x > camX + viewWorldW + 30 ||
+          w.y + w.h < camY - 30 ||
+          w.y > camY + viewWorldH + 30
+        ) {
+          return;
+        }
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
         ctx.fillRect(w.x + 6, w.y + 8, w.w, w.h);
         ctx.fillStyle = activeMap.wallMainColor;
         ctx.fillRect(w.x, w.y, w.w, w.h);
         ctx.fillStyle = activeMap.wallTopColor;
         ctx.fillRect(w.x + 3, w.y + 3, Math.max(2, w.w - 6), Math.max(2, w.h - 6));
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(w.x + 3, w.y + 3, Math.max(2, w.w - 6), Math.max(2, w.h - 6));
       });
 
-      // 5. Players & Zombies
+      // 5. Players & Hunters
       if (phase === 'HIDE_ACTIVE') {
-        // Only render active Hider's sprite when NOT tucked inside furniture
         if (activeHiderObj && !activeHiderObj.hiddenInId) {
           drawExpressiveCharacter(
             ctx,
@@ -1442,28 +1714,31 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             players[activeHiderObj.playerIdx]?.name ?? 'لاعب'
           );
         }
-      } else {
-        const sk = seekerStateRef.current;
-
+      } else if (viewerHunter) {
         if (mode === 'dark') {
-          const rayPts: Array<{ x: number; y: number }> = [{ x: sk.x, y: sk.y }];
-          const rays = 40;
+          const rayPts: Array<{ x: number; y: number }> = [{ x: viewerHunter.x, y: viewerHunter.y }];
+          const rays = 44;
           for (let r = 0; r <= rays; r++) {
             const ang =
-              sk.angle -
+              viewerHunter.angle -
               DARK_FLASHLIGHT_HALF_FOV +
               (r / rays) * (DARK_FLASHLIGHT_HALF_FOV * 2);
-            rayPts.push(castRay(sk.x, sk.y, ang, DARK_FLASHLIGHT_RANGE, occluderSegments));
+            rayPts.push(
+              castRay(viewerHunter.x, viewerHunter.y, ang, DARK_FLASHLIGHT_RANGE, occluderSegments)
+            );
           }
 
-          // Completely skip caught OR hiddenInId !== null players!
+          // Visible unhidden hiders inside wide flashlight OR close ambient halo with LOS
           hidersRef.current.forEach((h) => {
             if (h.caught || h.hiddenInId !== null) return;
-            const dist = Math.hypot(h.x - sk.x, h.y - sk.y);
+            const dist = Math.hypot(h.x - viewerHunter.x, h.y - viewerHunter.y);
             if (dist > DARK_FLASHLIGHT_RANGE) return;
-            const angToH = Math.atan2(h.y - sk.y, h.x - sk.x);
-            if (Math.abs(normalizeAngleDiff(angToH, sk.angle)) > DARK_FLASHLIGHT_HALF_FOV) return;
-            if (!hasLineOfSight(sk.x, sk.y, h.x, h.y, occluderSegments)) return;
+            const angToH = Math.atan2(h.y - viewerHunter.y, h.x - viewerHunter.x);
+            const inBeam =
+              Math.abs(normalizeAngleDiff(angToH, viewerHunter.angle)) <= DARK_FLASHLIGHT_HALF_FOV ||
+              dist < 95;
+            if (!inBeam) return;
+            if (!hasLineOfSight(viewerHunter.x, viewerHunter.y, h.x, h.y, occluderSegments)) return;
             drawExpressiveCharacter(
               ctx,
               h.x,
@@ -1475,7 +1750,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             );
           });
 
-          // Pitch black room darkness overlay with wall-occluded flashlight cutout
+          // Softer twilight dimness overlay so walls/doorways stay faintly visible around Seeker
           ctx.save();
           ctx.beginPath();
           ctx.rect(camX - 20, camY - 20, viewWorldW + 40, viewWorldH + 40);
@@ -1484,18 +1759,36 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             ctx.lineTo(rayPts[i].x, rayPts[i].y);
           }
           ctx.closePath();
-          ctx.fillStyle = 'rgba(2, 6, 23, 0.94)';
+          ctx.fillStyle = 'rgba(8, 15, 34, 0.72)';
           ctx.fill('evenodd');
 
+          // Soft ambient lantern glow right around Seeker
+          const ambientGrad = ctx.createRadialGradient(
+            viewerHunter.x,
+            viewerHunter.y,
+            12,
+            viewerHunter.x,
+            viewerHunter.y,
+            135
+          );
+          ambientGrad.addColorStop(0, 'rgba(254, 240, 138, 0.25)');
+          ambientGrad.addColorStop(1, 'rgba(254, 240, 138, 0)');
+          ctx.fillStyle = ambientGrad;
+          ctx.beginPath();
+          ctx.arc(viewerHunter.x, viewerHunter.y, 135, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Wide crisp flashlight beam gradient
           const beamGrad = ctx.createRadialGradient(
-            sk.x,
-            sk.y,
+            viewerHunter.x,
+            viewerHunter.y,
             16,
-            sk.x,
-            sk.y,
+            viewerHunter.x,
+            viewerHunter.y,
             DARK_FLASHLIGHT_RANGE
           );
-          beamGrad.addColorStop(0, 'rgba(254, 240, 138, 0.34)');
+          beamGrad.addColorStop(0, 'rgba(254, 249, 195, 0.36)');
+          beamGrad.addColorStop(0.7, 'rgba(254, 240, 138, 0.16)');
           beamGrad.addColorStop(1, 'rgba(254, 240, 138, 0.02)');
           ctx.fillStyle = beamGrad;
           ctx.beginPath();
@@ -1507,14 +1800,17 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           ctx.fill();
           ctx.restore();
         } else {
-          // Normal / Zombie Mode: Subtle forward beam + unobstructed LOS unhidden hiders ONLY
+          // Normal / Zombie Mode: Forward sight cone + unobstructed LOS unhidden hiders ONLY
           ctx.save();
-          ctx.fillStyle = 'rgba(254, 240, 138, 0.14)';
+          ctx.fillStyle =
+            viewerHunter.role === 'zombie'
+              ? 'rgba(163, 230, 53, 0.16)'
+              : 'rgba(254, 240, 138, 0.16)';
           ctx.beginPath();
-          ctx.moveTo(sk.x, sk.y);
+          ctx.moveTo(viewerHunter.x, viewerHunter.y);
           for (let r = 0; r <= 20; r++) {
-            const ang = sk.angle - 0.52 + (r / 20) * 1.04;
-            const pt = castRay(sk.x, sk.y, ang, 250, occluderSegments);
+            const ang = viewerHunter.angle - 0.54 + (r / 20) * 1.08;
+            const pt = castRay(viewerHunter.x, viewerHunter.y, ang, 270, occluderSegments);
             ctx.lineTo(pt.x, pt.y);
           }
           ctx.closePath();
@@ -1523,10 +1819,10 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
 
           hidersRef.current.forEach((h) => {
             if (h.caught || h.hiddenInId !== null) return;
-            const dist = Math.hypot(h.x - sk.x, h.y - sk.y);
+            const dist = Math.hypot(h.x - viewerHunter.x, h.y - viewerHunter.y);
             if (
               dist <= NORMAL_SIGHT_RANGE &&
-              hasLineOfSight(sk.x, sk.y, h.x, h.y, occluderSegments)
+              hasLineOfSight(viewerHunter.x, viewerHunter.y, h.x, h.y, occluderSegments)
             ) {
               drawExpressiveCharacter(
                 ctx,
@@ -1541,24 +1837,13 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           });
         }
 
-        // Draw AI Zombies
-        zombiesRef.current.forEach((z) => {
-          drawExpressiveCharacter(ctx, z.x, z.y, z.angle, z.walkPhase, z.color, 'زومبي 🧟', {
-            isZombie: true,
+        // Draw all active human hunters (Seeker + converted Zombie players)
+        huntersRef.current.forEach((ht) => {
+          drawExpressiveCharacter(ctx, ht.x, ht.y, ht.angle, ht.walkPhase, ht.hex, ht.name, {
+            isSeeker: ht.role === 'seeker',
+            isZombie: ht.role === 'zombie',
           });
         });
-
-        // Draw Seeker on top
-        drawExpressiveCharacter(
-          ctx,
-          sk.x,
-          sk.y,
-          sk.angle,
-          sk.walkPhase,
-          playerHexes[seekerPlayerIdx] ?? '#EF4444',
-          players[seekerPlayerIdx]?.name ?? 'الباحث',
-          { isSeeker: true }
-        );
       }
 
       // 6. Floating Bursts & Alerts
@@ -1578,16 +1863,91 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
       ctx.restore();
     };
 
+    const drawWorld = (now: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const { w: vw, h: vh } = viewSizeRef.current;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      if (phase === 'HIDE_ACTIVE') {
+        const focusTarget =
+          hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx) ??
+          activeMap.seekerSpawn;
+        const camProxy = {
+          camX: cameraRef.current.x,
+          camY: cameraRef.current.y,
+        };
+        renderSingleViewport(
+          ctx,
+          now,
+          { x: 0, y: 0, w: vw, h: vh },
+          focusTarget,
+          camProxy,
+          null,
+          false
+        );
+        cameraRef.current.x = camProxy.camX;
+        cameraRef.current.y = camProxy.camY;
+      } else {
+        const activeHunters = huntersRef.current;
+        const vps = computeViewports(activeHunters.length, vw, vh);
+        const isSplit = vps.length > 1;
+
+        vps.forEach((vp, i) => {
+          const ht = activeHunters[i];
+          if (!ht) return;
+          renderSingleViewport(ctx, now, vp, ht, ht, ht, isSplit);
+        });
+
+        // Crisp glowing dividers + mini corner nameplates when split-screen is active
+        if (isSplit) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+          ctx.lineWidth = 3;
+          if (vps.length >= 2) {
+            ctx.beginPath();
+            ctx.moveTo(0, vh / 2);
+            ctx.lineTo(vw, vh / 2);
+            ctx.stroke();
+          }
+          if (vps.length === 3) {
+            ctx.beginPath();
+            ctx.moveTo(vw / 2, 0);
+            ctx.lineTo(vw / 2, vh / 2);
+            ctx.stroke();
+          } else if (vps.length >= 4) {
+            ctx.beginPath();
+            ctx.moveTo(vw / 2, 0);
+            ctx.lineTo(vw / 2, vh);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+    };
+
+    const pushFootstep = (x: number, y: number, angle: number, walkPhase: number, color: string) => {
+      const side: -1 | 1 = Math.sin(walkPhase) >= 0 ? 1 : -1;
+      footstepsRef.current.push({ x, y, angle, side, color, life: 1.0 });
+      if (footstepsRef.current.length > 96) {
+        footstepsRef.current.shift();
+      }
+    };
+
     const step = (now: number) => {
       const dt = Math.min(0.05, (now - lastTs) / 1000);
       lastTs = now;
 
-      const jv = joyVecRef.current;
-      const mag = Math.hypot(jv.dx, jv.dy);
-
       if (phase === 'HIDE_ACTIVE') {
+        const jv = hunterJoysRef.current[0];
+        const mag = Math.hypot(jv.dx, jv.dy);
         const activeH = hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx);
         if (activeH && activeH.hiddenInId === null && jv.active && mag > 0.05) {
+          const prevPhase = activeH.walkPhase;
           const nx = jv.dx / mag;
           const ny = jv.dy / mag;
           const spd = HIDER_SPEED * Math.min(1, mag);
@@ -1601,143 +1961,73 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           activeH.y = next.y;
           activeH.angle = Math.atan2(ny, nx);
           activeH.walkPhase += dt * 15;
+          if (Math.floor(prevPhase / Math.PI) !== Math.floor(activeH.walkPhase / Math.PI)) {
+            pushFootstep(
+              activeH.x,
+              activeH.y,
+              activeH.angle,
+              activeH.walkPhase,
+              playerHexes[activeH.playerIdx] ?? '#F97316'
+            );
+          }
         }
       } else if (phase === 'SEEK_ACTIVE' && !roundEndedRef.current) {
-        const sk = seekerStateRef.current;
-        if (jv.active && mag > 0.05) {
-          const nx = jv.dx / mag;
-          const ny = jv.dy / mag;
-          const spd = SEEKER_SPEED * Math.min(1, mag);
-          const next = resolveMapCollision(
-            sk.x + nx * spd * dt,
-            sk.y + ny * spd * dt,
-            PLAYER_R,
-            activeMap
-          );
-          sk.x = next.x;
-          sk.y = next.y;
-          sk.angle = Math.atan2(ny, nx);
-          sk.walkPhase += dt * 15;
-        }
-
-        // Direct touch catches ONLY unhidden hiders (hiddenInId !== null requires "فتّش المكان 🔍")
         let caughtNew = false;
-        for (const h of hidersRef.current) {
-          if (h.caught || h.hiddenInId !== null) continue;
-          if (Math.hypot(h.x - sk.x, h.y - sk.y) < PLAYER_R * 2.15) {
-            h.caught = true;
-            h.caughtAtSec = secondsLeftRef.current;
-            caughtNew = true;
-            soundManager.play('catch');
-            triggerHaptic([35, 30, 45]);
-            burstsRef.current.push({
-              x: h.x,
-              y: h.y - 16,
-              text: `تم القبض على ${players[h.playerIdx]?.name ?? ''}! 🚨`,
-              color: '#FACC15',
-              life: 1.5,
-            });
 
-            if (mode === 'zombie' && zombiesRef.current.length < MAX_ZOMBIES) {
-              zombiesRef.current.push({
-                id: Date.now() + h.playerIdx,
-                x: h.x,
-                y: h.y,
-                angle: 0,
-                walkPhase: 0,
-                waypointIdx: Math.floor(Math.random() * activeMap.patrolWaypoints.length),
-                stuckTimer: 0,
-                color: '#65A30D',
-              });
-              burstsRef.current.push({
-                x: h.x,
-                y: h.y - 40,
-                text: 'تحول لزومبي! 🧟‍♂️',
-                color: '#84CC16',
-                life: 1.5,
-              });
+        for (let hSlot = 0; hSlot < huntersRef.current.length; hSlot++) {
+          const ht = huntersRef.current[hSlot];
+          const jv = hunterJoysRef.current[hSlot];
+          const mag = jv ? Math.hypot(jv.dx, jv.dy) : 0;
+
+          if (jv && jv.active && mag > 0.05) {
+            const prevPhase = ht.walkPhase;
+            const nx = jv.dx / mag;
+            const ny = jv.dy / mag;
+            const baseSpd = ht.role === 'seeker' ? SEEKER_SPEED : ZOMBIE_SPEED;
+            const spd = baseSpd * Math.min(1, mag);
+            const next = resolveMapCollision(
+              ht.x + nx * spd * dt,
+              ht.y + ny * spd * dt,
+              PLAYER_R,
+              activeMap
+            );
+            ht.x = next.x;
+            ht.y = next.y;
+            ht.angle = Math.atan2(ny, nx);
+            ht.walkPhase += dt * 15;
+            if (Math.floor(prevPhase / Math.PI) !== Math.floor(ht.walkPhase / Math.PI)) {
+              pushFootstep(
+                ht.x,
+                ht.y,
+                ht.angle,
+                ht.walkPhase,
+                ht.role === 'zombie' ? '#65A30D' : ht.hex
+              );
             }
           }
-        }
 
-        // Smart AI Zombies patrolling across rooms & chasing visible unhidden hiders
-        const waypoints = activeMap.patrolWaypoints;
-        for (const z of zombiesRef.current) {
-          let chaseHider: HiderState | null = null;
-          let bestDist = 450;
+          // Direct touch catches ONLY unhidden hiders (hiddenInId !== null requires "فتّش 🔍")
           for (const h of hidersRef.current) {
             if (h.caught || h.hiddenInId !== null) continue;
-            const d = Math.hypot(h.x - z.x, h.y - z.y);
-            if (d < bestDist && hasLineOfSight(z.x, z.y, h.x, h.y, occluderSegments)) {
-              bestDist = d;
-              chaseHider = h;
-            }
-          }
-
-          let tx = waypoints[z.waypointIdx % waypoints.length].x;
-          let ty = waypoints[z.waypointIdx % waypoints.length].y;
-          if (chaseHider) {
-            tx = chaseHider.x;
-            ty = chaseHider.y;
-          } else if (Math.hypot(tx - z.x, ty - z.y) < 38) {
-            z.waypointIdx = (z.waypointIdx + 1) % waypoints.length;
-            tx = waypoints[z.waypointIdx].x;
-            ty = waypoints[z.waypointIdx].y;
-          }
-
-          const ang = Math.atan2(ty - z.y, tx - z.x);
-          const prevX = z.x;
-          const prevY = z.y;
-          const next = resolveMapCollision(
-            z.x + Math.cos(ang) * ZOMBIE_SPEED * dt,
-            z.y + Math.sin(ang) * ZOMBIE_SPEED * dt,
-            PLAYER_R,
-            activeMap
-          );
-          z.x = next.x;
-          z.y = next.y;
-          z.angle = ang;
-          z.walkPhase += dt * 12;
-
-          // Prevent AI Zombie getting wedged on maze corners
-          if (!chaseHider && Math.hypot(z.x - prevX, z.y - prevY) < 12 * dt) {
-            z.stuckTimer += dt;
-            if (z.stuckTimer > 0.7) {
-              z.stuckTimer = 0;
-              z.waypointIdx =
-                (z.waypointIdx + 1 + Math.floor(Math.random() * 2)) % waypoints.length;
-            }
-          } else {
-            z.stuckTimer = 0;
-          }
-
-          for (const h of hidersRef.current) {
-            if (h.caught || h.hiddenInId !== null) continue;
-            if (Math.hypot(h.x - z.x, h.y - z.y) < PLAYER_R * 2.1) {
+            if (Math.hypot(h.x - ht.x, h.y - ht.y) < PLAYER_R * 2.15) {
               h.caught = true;
               h.caughtAtSec = secondsLeftRef.current;
+              ht.catches += 1;
               caughtNew = true;
               soundManager.play('catch');
               triggerHaptic([35, 30, 45]);
               burstsRef.current.push({
                 x: h.x,
                 y: h.y - 16,
-                text: `الزومبي مسك ${players[h.playerIdx]?.name ?? ''}! 🧟`,
-                color: '#84CC16',
+                text:
+                  ht.role === 'zombie'
+                    ? `الزومبي ${ht.name} مسك ${players[h.playerIdx]?.name ?? ''}! 🧟`
+                    : `تم القبض على ${players[h.playerIdx]?.name ?? ''}! 🚨`,
+                color: ht.role === 'zombie' ? '#84CC16' : '#FACC15',
                 life: 1.5,
               });
-              if (zombiesRef.current.length < MAX_ZOMBIES) {
-                zombiesRef.current.push({
-                  id: Date.now() + h.playerIdx,
-                  x: h.x,
-                  y: h.y,
-                  angle: 0,
-                  walkPhase: 0,
-                  waypointIdx: Math.floor(Math.random() * waypoints.length),
-                  stuckTimer: 0,
-                  color: '#65A30D',
-                });
-              }
+
+              infectHiderToSplitZombie(h, h.x, h.y);
             }
           }
         }
@@ -1753,27 +2043,54 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         }
       }
 
-      // Sync contextual room + nearby hideable/inspectable furniture label cleanly
+      // Sync contextual room + nearby hideable/inspectable furniture labels cleanly
       if (now - lastUiSync > 90) {
         lastUiSync = now;
-        const focus =
-          phase === 'HIDE_ACTIVE'
-            ? hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx)
-            : seekerStateRef.current;
-        if (focus) {
-          const near = findNearestHideableFurniture(
-            focus.x,
-            focus.y,
-            phase === 'HIDE_ACTIVE' ? HIDE_INTERACT_DIST : INSPECT_INTERACT_DIST,
-            activeMap
-          );
-          setNearbyFurn(near ? { id: near.id, label: near.label } : null);
-          setCurrentRoomLabel(getCurrentRoomName(focus.x, focus.y, activeMap));
-          if (phase === 'HIDE_ACTIVE' && 'hiddenInId' in focus) {
+        if (phase === 'HIDE_ACTIVE') {
+          const focus = hidersRef.current.find((h) => h.playerIdx === currentHiderPlayerIdx);
+          if (focus) {
+            const near = findNearestHideableFurniture(
+              focus.x,
+              focus.y,
+              HIDE_INTERACT_DIST,
+              activeMap
+            );
+            setNearbyFurn(near ? { id: near.id, label: near.label } : null);
+            setCurrentRoomLabel(getCurrentRoomName(focus.x, focus.y, activeMap));
             setIsCurrentHidden(Boolean(focus.hiddenInId));
+          }
+        } else {
+          const nearList = [0, 1, 2, 3].map((slot) => {
+            const ht = huntersRef.current[slot];
+            if (!ht) return null;
+            const near = findNearestHideableFurniture(
+              ht.x,
+              ht.y,
+              INSPECT_INTERACT_DIST,
+              activeMap
+            );
+            return near ? { id: near.id, label: near.label } : null;
+          });
+          setHunterNearbyFurns(nearList);
+          setHunterBadges(
+            huntersRef.current.map((ht) => ({
+              name: ht.name,
+              hex: ht.hex,
+              role: ht.role,
+              room: getCurrentRoomName(ht.x, ht.y, activeMap),
+            }))
+          );
+          if (huntersRef.current[0]) {
+            setCurrentRoomLabel(
+              getCurrentRoomName(huntersRef.current[0].x, huntersRef.current[0].y, activeMap)
+            );
           }
         }
       }
+
+      footstepsRef.current = footstepsRef.current
+        .map((fp) => ({ ...fp, life: fp.life - dt * 0.45 }))
+        .filter((fp) => fp.life > 0);
 
       burstsRef.current = burstsRef.current
         .map((b) => ({ ...b, y: b.y - 30 * dt, life: b.life - dt }))
@@ -1794,26 +2111,35 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     activeMap,
     occluderSegments,
     seekerPlayerIdx,
+    infectHiderToSplitZombie,
     finalizeRound,
   ]);
 
-  // Strictly Fixed Virtual Joystick Base Handlers (zero sliding, isolated pointerId)
-  const JOY_MAX_R = 38;
-  const updateJoyFromClient = (clientX: number, clientY: number) => {
-    const { cx, cy } = joyOriginRef.current;
-    const vx = clientX - cx;
-    const vy = clientY - cy;
+  // Strictly Fixed Virtual Multi-Touch Joystick Handlers (up to 4 simultaneous corners)
+  const getJoyMaxR = () => (phase === 'SEEK_ACTIVE' && activeHunterCount > 1 ? 30 : 38);
+
+  const updateJoyFromClient = (slotIdx: number, clientX: number, clientY: number) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot) return;
+    const maxR = getJoyMaxR();
+    const vx = clientX - slot.cx;
+    const vy = clientY - slot.cy;
     const dist = Math.hypot(vx, vy);
-    const clamped = Math.min(JOY_MAX_R, dist);
+    const clamped = Math.min(maxR, dist);
     const ang = Math.atan2(vy, vx);
-    const kx = dist > 0.5 ? (Math.cos(ang) * clamped) / JOY_MAX_R : 0;
-    const ky = dist > 0.5 ? (Math.sin(ang) * clamped) / JOY_MAX_R : 0;
-    joyVecRef.current = { dx: kx, dy: ky, active: dist > 0.5 };
-    setJoyVisual({ kx, ky, active: true });
+    const kx = dist > 0.5 ? (Math.cos(ang) * clamped) / maxR : 0;
+    const ky = dist > 0.5 ? (Math.sin(ang) * clamped) / maxR : 0;
+    slot.dx = kx;
+    slot.dy = ky;
+    slot.active = dist > 0.5;
+    setJoyVisuals((prev) =>
+      prev.map((item, idx) => (idx === slotIdx ? { kx, ky, active: true } : item))
+    );
   };
 
-  const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== null) return;
+  const handleJoyDown = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot || slot.pointerId !== null) return;
     e.preventDefault();
     e.stopPropagation();
     soundManager.unlock();
@@ -1823,20 +2149,23 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
       // Ignore synthetic capture failures
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    joyOriginRef.current = { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
-    activePointerIdRef.current = e.pointerId;
+    slot.cx = rect.left + rect.width / 2;
+    slot.cy = rect.top + rect.height / 2;
+    slot.pointerId = e.pointerId;
     triggerHaptic(12);
-    updateJoyFromClient(e.clientX, e.clientY);
+    updateJoyFromClient(slotIdx, e.clientX, e.clientY);
   };
 
-  const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
+  const handleJoyMove = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot || slot.pointerId !== e.pointerId) return;
     e.preventDefault();
-    updateJoyFromClient(e.clientX, e.clientY);
+    updateJoyFromClient(slotIdx, e.clientX, e.clientY);
   };
 
-  const handleJoyEnd = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointerIdRef.current !== e.pointerId) return;
+  const handleJoyEnd = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot || slot.pointerId !== e.pointerId) return;
     try {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
@@ -1844,7 +2173,13 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     } catch {
       // Ignore release errors
     }
-    clearJoystick();
+    slot.pointerId = null;
+    slot.dx = 0;
+    slot.dy = 0;
+    slot.active = false;
+    setJoyVisuals((prev) =>
+      prev.map((item, idx) => (idx === slotIdx ? { kx: 0, ky: 0, active: false } : item))
+    );
   };
 
   const activePlayer =
@@ -2209,41 +2544,144 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             </div>
           </div>
 
-          {/* Bottom-Left STRICTLY FIXED Base Virtual Joystick */}
-          <div
-            style={{ touchAction: 'none' }}
-            onPointerDown={handleJoyDown}
-            onPointerMove={handleJoyMove}
-            onPointerUp={handleJoyEnd}
-            onPointerCancel={handleJoyEnd}
-            onLostPointerCapture={handleJoyEnd}
-            className="absolute bottom-5 left-5 z-30 w-[114px] h-[114px] rounded-full cursor-pointer select-none flex items-center justify-center"
-          >
+          {/* Bottom-Left Fixed Joystick for HIDE_ACTIVE or single-hunter SEEK_ACTIVE */}
+          {(phase === 'HIDE_ACTIVE' || activeHunterCount === 1) && (
             <div
-              style={{
-                borderColor: activeHex,
-                backgroundColor: joyVisual.active
-                  ? 'rgba(15, 23, 42, 0.52)'
-                  : 'rgba(15, 23, 42, 0.34)',
-              }}
-              className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+              style={{ touchAction: 'none' }}
+              onPointerDown={handleJoyDown(0)}
+              onPointerMove={handleJoyMove(0)}
+              onPointerUp={handleJoyEnd(0)}
+              onPointerCancel={handleJoyEnd(0)}
+              onLostPointerCapture={handleJoyEnd(0)}
+              className="absolute bottom-5 left-5 z-30 w-[114px] h-[114px] rounded-full cursor-pointer select-none flex items-center justify-center"
             >
-              <span className="pointer-events-none absolute -top-5 px-2.5 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white whitespace-nowrap">
-                {isCurrentHidden ? '🫣 مستخبي جوه' : 'حرّك هنا'}
-              </span>
               <div
                 style={{
-                  backgroundColor: activeHex,
-                  transform: `translate3d(${joyVisual.kx * JOY_MAX_R}px, ${joyVisual.ky * JOY_MAX_R}px, 0) scale(${joyVisual.active ? 1.08 : 1})`,
+                  borderColor: activeHex,
+                  backgroundColor: joyVisuals[0]?.active
+                    ? 'rgba(15, 23, 42, 0.52)'
+                    : 'rgba(15, 23, 42, 0.34)',
                 }}
-                className={`pointer-events-none w-11 h-11 rounded-full border-[3px] border-white shadow-lg ${
-                  joyVisual.active ? '' : 'transition-transform duration-150'
-                }`}
-              />
+                className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+              >
+                <span className="pointer-events-none absolute -top-5 px-2.5 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white whitespace-nowrap">
+                  {isCurrentHidden && phase === 'HIDE_ACTIVE' ? '🫣 مستخبي جوه' : 'حرّك هنا'}
+                </span>
+                <div
+                  style={{
+                    backgroundColor: activeHex,
+                    transform: `translate3d(${(joyVisuals[0]?.kx ?? 0) * 38}px, ${(joyVisuals[0]?.ky ?? 0) * 38}px, 0) scale(${joyVisuals[0]?.active ? 1.08 : 1})`,
+                  }}
+                  className={`pointer-events-none w-11 h-11 rounded-full border-[3px] border-white shadow-lg ${
+                    joyVisuals[0]?.active ? '' : 'transition-transform duration-150'
+                  }`}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Bottom-Right Contextual Action Buttons */}
+          {/* Dynamic Multi-Player Split-Screen Corner Joysticks & Inspect Buttons (Zombie Mode 2–4 Viewports) */}
+          {phase === 'SEEK_ACTIVE' &&
+            activeHunterCount > 1 &&
+            Array.from({ length: Math.min(4, activeHunterCount) }, (_, slotIdx) => {
+              const badge = hunterBadges[slotIdx];
+              const jVis = joyVisuals[slotIdx] ?? { kx: 0, ky: 0, active: false };
+              const nearFurnForSlot = hunterNearbyFurns[slotIdx];
+              const hex = badge?.hex ?? (slotIdx === 0 ? playerHexes[seekerPlayerIdx] : '#84CC16');
+
+              // Map each viewport's joystick & inspect button strictly inside its own quadrant
+              const joyPosClass =
+                activeHunterCount === 2
+                  ? slotIdx === 0
+                    ? 'top-14 left-3'
+                    : 'bottom-3 right-3'
+                  : activeHunterCount === 3
+                    ? slotIdx === 0
+                      ? 'top-14 left-3'
+                      : slotIdx === 1
+                        ? 'top-14 right-3'
+                        : 'bottom-3 left-3'
+                    : slotIdx === 0
+                      ? 'top-14 left-2.5'
+                      : slotIdx === 1
+                        ? 'top-14 right-2.5'
+                        : slotIdx === 2
+                          ? 'bottom-3 left-2.5'
+                          : 'bottom-3 right-2.5';
+
+              const inspectPosClass =
+                activeHunterCount === 2
+                  ? slotIdx === 0
+                    ? 'top-14 right-3'
+                    : 'bottom-3 left-3'
+                  : activeHunterCount === 3
+                    ? slotIdx === 0
+                      ? 'top-[calc(50%-52px)] left-2.5'
+                      : slotIdx === 1
+                        ? 'top-[calc(50%-52px)] right-2.5'
+                        : 'bottom-3 right-3'
+                    : slotIdx === 0
+                      ? 'top-[calc(50%-48px)] left-2.5'
+                      : slotIdx === 1
+                        ? 'top-[calc(50%-48px)] right-2.5'
+                        : slotIdx === 2
+                          ? 'top-[calc(50%+10px)] left-2.5'
+                          : 'top-[calc(50%+10px)] right-2.5';
+
+              return (
+                <React.Fragment key={slotIdx}>
+                  <div
+                    style={{ touchAction: 'none' }}
+                    onPointerDown={handleJoyDown(slotIdx)}
+                    onPointerMove={handleJoyMove(slotIdx)}
+                    onPointerUp={handleJoyEnd(slotIdx)}
+                    onPointerCancel={handleJoyEnd(slotIdx)}
+                    onLostPointerCapture={handleJoyEnd(slotIdx)}
+                    className={`absolute ${joyPosClass} z-30 w-[92px] h-[92px] rounded-full cursor-pointer select-none flex items-center justify-center`}
+                  >
+                    <div
+                      style={{
+                        borderColor: hex,
+                        backgroundColor: jVis.active
+                          ? 'rgba(15, 23, 42, 0.56)'
+                          : 'rgba(15, 23, 42, 0.36)',
+                      }}
+                      className="pointer-events-none relative w-full h-full rounded-full border-[3px] backdrop-blur-[2px] shadow-[0_3px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+                    >
+                      <span
+                        dir="rtl"
+                        className="pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-slate-950/85 border border-white/20 text-[10px] font-black text-white whitespace-nowrap max-w-[120px] truncate"
+                      >
+                        {badge?.role === 'zombie' ? '🧟' : '🕵️‍♂️'} {badge?.name ?? ''}
+                      </span>
+                      <div
+                        style={{
+                          backgroundColor: hex,
+                          transform: `translate3d(${jVis.kx * 30}px, ${jVis.ky * 30}px, 0) scale(${jVis.active ? 1.08 : 1})`,
+                        }}
+                        className={`pointer-events-none w-9 h-9 rounded-full border-[2.5px] border-white shadow-lg ${
+                          jVis.active ? '' : 'transition-transform duration-150'
+                        }`}
+                      />
+                    </div>
+                  </div>
+
+                  {nearFurnForSlot && (
+                    <button
+                      dir="rtl"
+                      type="button"
+                      onClick={() => handleInspectFurniture(slotIdx)}
+                      className={`absolute ${inspectPosClass} z-30 min-h-[40px] px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 border-2 border-amber-200 border-b-4 border-b-amber-800 text-slate-950 font-black text-[11px] shadow-xl flex items-center gap-1 animate-pulse transition-transform`}
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>فتّش 🔍</span>
+                    </button>
+                  )}
+                </React.Fragment>
+              );
+            })}
+
+          {/* Bottom-Right Contextual Action Buttons (HIDE_ACTIVE or 1-viewport SEEK_ACTIVE) */}
           <div dir="rtl" className="absolute bottom-5 right-5 z-30 flex flex-col items-end gap-2.5">
             {phase === 'HIDE_ACTIVE' && (nearbyFurn || isCurrentHidden) && (
               <button
@@ -2289,14 +2727,14 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
               </button>
             )}
 
-            {phase === 'SEEK_ACTIVE' && nearbyFurn && (
+            {phase === 'SEEK_ACTIVE' && activeHunterCount === 1 && hunterNearbyFurns[0] && (
               <button
                 type="button"
-                onClick={handleInspectFurniture}
+                onClick={() => handleInspectFurniture(0)}
                 className="min-h-[56px] px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 border-2 border-amber-200 border-b-4 border-b-amber-800 text-slate-950 font-black text-sm shadow-xl flex items-center gap-2 animate-pulse transition-transform"
               >
                 <Search className="w-5 h-5" />
-                <span>فتّش {nearbyFurn.label} 🔍</span>
+                <span>فتّش {hunterNearbyFurns[0].label} 🔍</span>
               </button>
             )}
           </div>

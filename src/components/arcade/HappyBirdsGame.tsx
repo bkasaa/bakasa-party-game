@@ -81,6 +81,7 @@ const DEFAULT_MATCH_SECONDS = 30;
 const GRAVITY = 860;
 const FLAP_VY = -335;
 const RESPAWN_FREEZE_MS = 3000;
+const RESPAWN_INVULN_MS = 3000;
 
 const SLOT_CORNER_POS: Record<CornerSlot, string> = {
   'top-left': 'top-3 left-3',
@@ -128,8 +129,10 @@ function drawBlockyBird(
   now: number
 ) {
   const isFrozen = bird.frozenUntil > now;
-  const isInvuln = bird.invulnUntil > now;
-  if (isInvuln && Math.floor(now / 90) % 2 === 0) return;
+  const isInvuln = !isFrozen && bird.invulnUntil > now;
+  const invulnProgress = isInvuln
+    ? Math.max(0, Math.min(1, (bird.invulnUntil - now) / RESPAWN_INVULN_MS))
+    : 0;
 
   const facingRight = bird.vx >= 0;
   const dir = facingRight ? 1 : -1;
@@ -227,6 +230,53 @@ function drawBlockyBird(
     ctx.strokeText(`${rem}`, 0, -26);
     ctx.fillStyle = '#ffffff';
     ctx.fillText(`${rem}`, 0, -26);
+  }
+
+  // Respawn 3s protective bubble shield + circular countdown ring
+  if (isInvuln) {
+    ctx.rotate(-tilt);
+    const pulse = 1 + Math.sin(now * 0.015) * 0.04;
+    const shieldR = 29 * pulse;
+
+    // Soft glowing shield dome
+    const domeGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, shieldR);
+    domeGrad.addColorStop(0, 'rgba(125, 211, 252, 0.08)');
+    domeGrad.addColorStop(0.75, 'rgba(56, 189, 248, 0.24)');
+    domeGrad.addColorStop(1, 'rgba(250, 204, 21, 0.42)');
+    ctx.fillStyle = domeGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Subtle track circle
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Bright circular countdown progress arc
+    ctx.strokeStyle = invulnProgress > 0.33 ? '#7dd3fc' : '#facc15';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(
+      0,
+      0,
+      shieldR,
+      -Math.PI / 2,
+      -Math.PI / 2 + Math.PI * 2 * invulnProgress
+    );
+    ctx.stroke();
+
+    const secRem = Math.max(1, Math.ceil((bird.invulnUntil - now) / 1000));
+    ctx.font = '900 12px Cairo, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 3.5;
+    ctx.strokeText(`🛡️ ${secRem}`, 0, -shieldR - 5);
+    ctx.fillStyle = '#e0f2fe';
+    ctx.fillText(`🛡️ ${secRem}`, 0, -shieldR - 5);
   }
 
   ctx.restore();
@@ -607,14 +657,21 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
       for (const bird of birdsRef.current) {
         bird.flapPulse = Math.max(0, bird.flapPulse - dt * 5);
 
-        // Respawn in center cleanly after 3s spike freeze
+        // Respawn in center cleanly after 3s spike freeze with 3s protective bubble shield
         if (bird.frozenUntil > 0 && now >= bird.frozenUntil) {
           bird.frozenUntil = 0;
-          bird.invulnUntil = now + 900;
+          bird.invulnUntil = now + RESPAWN_INVULN_MS;
           bird.x = w * 0.5;
           bird.y = h * 0.48;
           bird.vy = -120;
           bird.vx = (Math.random() < 0.5 ? 1 : -1) * Math.abs(bird.vx);
+          popupsRef.current.push({
+            x: bird.x,
+            y: bird.y - 34,
+            text: '🛡️ درع ٣ث!',
+            color: '#7dd3fc',
+            life: 1.1,
+          });
           soundManager.play('next');
         }
 
@@ -793,7 +850,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
               </div>
               <div className="mt-3 text-sm sm:text-base font-black text-white/95 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-300" />
-                <span>نجمة (+١٠) · بقاء (+٢/ث) · الشوكة توقفك ٣ ثواني!</span>
+                <span>نجمة (+١٠) · بقاء (+٢/ث) · درع حماية ٣ث بعد العودة!</span>
               </div>
             </div>
           )}

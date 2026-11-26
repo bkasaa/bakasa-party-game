@@ -7,6 +7,7 @@ interface ArcadeFloatingHudProps {
   stageLabel?: string;
   muted: boolean;
   onRequestExit: () => void;
+  positionMode?: 'fixed' | 'absolute';
 }
 
 export const ArcadeFloatingHud: React.FC<ArcadeFloatingHudProps> = ({
@@ -14,6 +15,7 @@ export const ArcadeFloatingHud: React.FC<ArcadeFloatingHudProps> = ({
   stageLabel,
   muted,
   onRequestExit,
+  positionMode = 'fixed',
 }) => {
   const [musicMuted, setMusicMuted] = useState<boolean>(() => soundManager.isMusicMuted());
 
@@ -29,7 +31,7 @@ export const ArcadeFloatingHud: React.FC<ArcadeFloatingHudProps> = ({
         backdropFilter: 'blur(4px)',
         WebkitBackdropFilter: 'blur(4px)',
       }}
-      className="pointer-events-none fixed top-[6px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5 shadow-md max-w-[calc(100vw-180px)]"
+      className={`pointer-events-none ${positionMode} top-[6px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5 shadow-md max-w-[calc(100%-180px)]`}
     >
       <button
         type="button"

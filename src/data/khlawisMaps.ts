@@ -11,6 +11,7 @@ export type FurnitureStyle =
   | 'bathtub'
   | 'plant'
   | 'hospital_bed'
+  | 'hospital_monitor'
   | 'medical_curtain'
   | 'medicine_cabinet'
   | 'wheelchair'
@@ -82,6 +83,7 @@ export interface MazeMapDefinition {
   seekerSpawn: { x: number; y: number };
   hiderSpots: Array<{ x: number; y: number }>;
   patrolWaypoints: Array<{ x: number; y: number }>;
+  hazardZones?: Array<{ x: number; y: number; w: number; h: number }>;
 }
 
 export const KHLAWIS_WORLD_W = 3000;
@@ -276,8 +278,10 @@ const APARTMENT_MAP: MazeMapDefinition = {
     { id: 'apt_curt_bath', x: 2890, y: 2040, w: 62, h: 220, style: 'curtain', label: 'ستارة الحمام', hideable: true, blocksSight: true, solidCollision: false, primaryColor: '#14B8A6', accentColor: '#99F6E4' },
     { id: 'apt_ward_laundry', x: 2240, y: 2740, w: 240, h: 96, style: 'wardrobe', label: 'دولاب الغسيل', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#334155', accentColor: '#94A3B8' },
     { id: 'apt_sink', x: 1680, y: 1700, w: 200, h: 88, style: 'kitchen', label: 'حوض الحمام', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0369A1', accentColor: '#BAE6FD' },
-    // Hallway Accent
+    // Hallway & Bedroom Plants
     { id: 'apt_plant_h', x: 1386, y: 180, w: 84, h: 84, style: 'plant', label: 'زرعة الممر', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#15803D', accentColor: '#86EFAC' },
+    { id: 'apt_plant_bed', x: 560, y: 78, w: 78, h: 78, style: 'plant', label: 'زرعة النوم', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#16A34A', accentColor: '#BBF7D0' },
+    { id: 'apt_plant_kids', x: 1170, y: 1360, w: 74, h: 74, style: 'plant', label: 'زرعة الأطفال', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#15803D', accentColor: '#86EFAC' },
   ],
   seekerSpawn: { x: 1430, y: 1500 },
   hiderSpots: [
@@ -474,9 +478,13 @@ const HOSPITAL_MAP: MazeMapDefinition = {
     { id: 'hosp_curt_iso', x: 2890, y: 1780, w: 58, h: 210, style: 'medical_curtain', label: 'ستارة العزل', hideable: true, blocksSight: true, solidCollision: false, primaryColor: '#F43F5E', accentColor: '#FFE4E6' },
     { id: 'hosp_cab_iso', x: 1760, y: 2760, w: 220, h: 92, style: 'medicine_cabinet', label: 'خزانة الطوارئ', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#94A3B8', accentColor: '#FACC15' },
     { id: 'hosp_wheel2', x: 2240, y: 2760, w: 86, h: 86, style: 'wheelchair', label: 'ترولي إسعاف', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#334155', accentColor: '#38BDF8' },
-    // Corridor Desk & Plants
+    // Corridor Desk, Plants & Animated ECG Monitors
     { id: 'hosp_recept', x: 1410, y: 1060, w: 160, h: 88, style: 'desk', label: 'الاستقبال', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F766E', accentColor: '#99F6E4' },
     { id: 'hosp_plant1', x: 1448, y: 180, w: 80, h: 80, style: 'plant', label: 'زرعة الممر', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#15803D', accentColor: '#86EFAC' },
+    { id: 'hosp_plant2', x: 1448, y: 2740, w: 78, h: 78, style: 'plant', label: 'زرعة المدخل', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#16A34A', accentColor: '#BBF7D0' },
+    { id: 'hosp_mon1', x: 318, y: 120, w: 68, h: 52, style: 'hospital_monitor', label: 'شاشة نبض ١', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#22C55E' },
+    { id: 'hosp_mon2', x: 2100, y: 272, w: 72, h: 54, style: 'hospital_monitor', label: 'مونيتور العمليات', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#38BDF8' },
+    { id: 'hosp_mon3', x: 1968, y: 1732, w: 68, h: 52, style: 'hospital_monitor', label: 'شاشة العزل', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#EF4444' },
   ],
   seekerSpawn: { x: 1490, y: 1470 },
   hiderSpots: [
@@ -695,6 +703,12 @@ const FACTORY_MAP: MazeMapDefinition = {
     { x: 1920, y: 2240 },
     { x: 2580, y: 2140 },
     { x: 2220, y: 2780 },
+  ],
+  hazardZones: [
+    { x: 74, y: 154, w: 372, h: 128 },
+    { x: 744, y: 104, w: 252, h: 172 },
+    { x: 1744, y: 1744, w: 282, h: 172 },
+    { x: 1340, y: 1360, w: 300, h: 280 },
   ],
 };
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Map as MapIcon, Swords } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useArcadeTouchLock } from '../../hooks/useArcadeTouchLock';
+import { mapScreenDeltaToLandscape, useForceLandscape } from '../../hooks/useForceLandscape';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import {
   ARCADE_COLORS,
@@ -124,6 +125,14 @@ const WEAPONS: Record<WeaponId, WeaponMeta> = {
 
 const WEAPON_LIST: WeaponId[] = ['saber', 'hammer', 'blaster', 'axe', 'shield'];
 
+interface WeaponTrailSample {
+  handX: number;
+  handY: number;
+  tipX: number;
+  tipY: number;
+  life: number;
+}
+
 interface StickmanFighter {
   playerIdx: number;
   x: number;
@@ -146,10 +155,16 @@ interface StickmanFighter {
   hitFlashUntil: number;
   ragdollUntil: number;
   shieldActiveUntil: number;
+  duckChargeSec: number;
+  bubbleShieldUntil: number;
+  shieldCharges: number;
+  isDucking: boolean;
+  weaponTrail: WeaponTrailSample[];
   tilt: number;
   angVel: number;
   runCycle: number;
   onGround: boolean;
+  wasOnGround: boolean;
   lastGroundedAt: number;
   jumpsLeft: number;
   jumpLatch: boolean;
@@ -199,6 +214,17 @@ interface LightningFlash {
   x: number;
   y: number;
   angle: number;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
+interface DustPuff {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
   color: string;
   life: number;
   maxLife: number;
@@ -582,10 +608,39 @@ function drawStickmanFighter(
 
   const isFlashing = f.hitFlashUntil > now;
   const isInvuln = f.invulnUntil > now;
-  const blinkAlpha = isInvuln ? 0.68 + Math.sin(now * 0.03) * 0.3 : 1;
+  const hasBubbleShield = f.bubbleShieldUntil > now;
+  const blinkAlpha = isInvuln ? 0.72 + Math.sin(now * 0.03) * 0.25 : 1;
   const bodyColor = isFlashing ? '#FFFFFF' : hex;
   const isRagdoll = f.ragdollUntil > now;
   const isSwinging = Math.abs(f.swingOffset) > 0.25;
+
+  // Weapon motion slash trail in world coordinates
+  if (f.weaponTrail.length >= 2) {
+    const trailColor =
+      f.weapon === 'saber'
+        ? '#EF4444'
+        : f.weapon === 'axe'
+          ? '#38BDF8'
+          : f.weapon === 'hammer'
+            ? '#F59E0B'
+            : hex;
+    for (let i = 1; i < f.weaponTrail.length; i++) {
+      const prev = f.weaponTrail[i - 1];
+      const curr = f.weaponTrail[i];
+      const alpha = Math.max(0, Math.min(0.42, curr.life * 2.2));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = trailColor;
+      ctx.beginPath();
+      ctx.moveTo(prev.handX, prev.handY);
+      ctx.lineTo(prev.tipX, prev.tipY);
+      ctx.lineTo(curr.tipX, curr.tipY);
+      ctx.lineTo(curr.handX, curr.handY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
 
   // Floating HP Bar + 12s Weapon Timer bar directly above head
   const barW = 42;
@@ -593,7 +648,7 @@ function drawStickmanFighter(
   const hpRatio = Math.max(0, Math.min(1, f.hp / f.maxHp));
   const hpColor = hpRatio > 0.55 ? '#22C55E' : hpRatio > 0.28 ? '#F59E0B' : '#EF4444';
   const barX = f.x - barW * 0.5;
-  const barY = f.y - 47;
+  const barY = f.y - (f.isDucking ? 40 : 47);
 
   ctx.save();
   ctx.fillStyle = '#0F172A';
@@ -627,15 +682,53 @@ function drawStickmanFighter(
   }
   ctx.restore();
 
-  // Glowing 1-second invulnerability bubble shield
-  if (isInvuln) {
+  // Ducking Shield Charge Progress Ring (0 -> 3s)
+  if (f.duckChargeSec > 0.08 && !hasBubbleShield) {
+    const chargeProg = Math.min(1, f.duckChargeSec / 3);
     ctx.save();
-    ctx.strokeStyle = '#38BDF8';
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
-    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(f.x, f.y - 4, 30 + Math.sin(now * 0.02) * 2.5, 0, Math.PI * 2);
+    ctx.arc(f.x, f.y - 2, 29, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#38BDF8';
+    ctx.shadowColor = '#38BDF8';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y - 2, 29, -Math.PI / 2, -Math.PI / 2 + chargeProg * Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Glowing Protective Energy Bubble Shield (Ground-Duck 4s Shield OR 1s Pit Respawn Invuln)
+  if (hasBubbleShield || isInvuln) {
+    const shieldRem = hasBubbleShield
+      ? Math.max(0, (f.bubbleShieldUntil - now) / 4000)
+      : Math.max(0, (f.invulnUntil - now) / 1000);
+    const pulseR = 32 + Math.sin(now * 0.018) * 2.2;
+    ctx.save();
+    ctx.shadowColor = hasBubbleShield ? '#22D3EE' : '#38BDF8';
+    ctx.shadowBlur = hasBubbleShield ? 16 : 8;
+    ctx.fillStyle = hasBubbleShield
+      ? 'rgba(34, 211, 238, 0.22)'
+      : 'rgba(56, 189, 248, 0.16)';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y - 4, pulseR, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.strokeStyle = hasBubbleShield ? '#67E8F9' : '#38BDF8';
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+
+    // Countdown energy arc around bubble
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y - 4, pulseR + 4, -Math.PI / 2, -Math.PI / 2 + shieldRem * Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -643,12 +736,12 @@ function drawStickmanFighter(
   // Articulated Stickman Body
   ctx.save();
   ctx.globalAlpha = blinkAlpha;
-  ctx.translate(f.x, f.y);
+  ctx.translate(f.x, f.y + (f.isDucking ? 5 : 0));
   ctx.rotate(f.tilt);
 
-  const hipY = 6;
-  const shoulderY = -12;
-  const headY = -24;
+  const hipY = f.isDucking ? 9 : 6;
+  const shoulderY = f.isDucking ? -7 : -12;
+  const headY = f.isDucking ? -18 : -24;
 
   // Compute dynamic procedural leg poses (with snappy kick pose during bare-handed swing)
   const isFistKick = f.weapon === 'fists' && isSwinging && f.swingDir < 0;
@@ -768,6 +861,20 @@ function drawArenaMap(
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
+    // Shimmering arctic aurora ribbon in sky
+    ctx.save();
+    ctx.strokeStyle = 'rgba(52, 211, 153, 0.25)';
+    ctx.lineWidth = 18;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let ax = 0; ax <= w; ax += 32) {
+      const ay = h * 0.15 + Math.sin(ax * 0.015 + timeSec * 1.1) * 16;
+      if (ax === 0) ctx.moveTo(ax, ay);
+      else ctx.lineTo(ax, ay);
+    }
+    ctx.stroke();
+    ctx.restore();
+
     // Distant jagged mountains
     ctx.fillStyle = '#93C5FD';
     ctx.beginPath();
@@ -796,7 +903,7 @@ function drawArenaMap(
     ctx.fillStyle = '#38BDF8';
     ctx.fillRect(0, waterY, w, 5);
 
-    // Ice block platforms with fluffy snow caps
+    // Textured Ice block platforms with glowing icy rim & fluffy snow caps
     const plats = getMapPlatforms('ice', w, h, planks, now);
     for (const p of plats) {
       const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
@@ -807,12 +914,26 @@ function drawArenaMap(
       ctx.roundRect(p.x, p.y + 8, p.w, p.h, 8);
       ctx.fill();
 
-      // Snow cap
+      // Crystalline ice facets & stone/ice texture
+      ctx.strokeStyle = 'rgba(224, 242, 254, 0.32)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w * 0.18, p.y + 22);
+      ctx.lineTo(p.x + p.w * 0.32, p.y + 52);
+      ctx.moveTo(p.x + p.w * 0.72, p.y + 26);
+      ctx.lineTo(p.x + p.w * 0.58, p.y + 62);
+      ctx.stroke();
+
+      // Glowing snow cap with top highlight rim
+      ctx.save();
+      ctx.shadowColor = '#BAE6FD';
+      ctx.shadowBlur = 10;
       ctx.fillStyle = '#FFFFFF';
       ctx.beginPath();
       ctx.roundRect(p.x - 3, p.y, p.w + 6, 18, 9);
       ctx.fill();
-      ctx.strokeStyle = '#BAE6FD';
+      ctx.restore();
+      ctx.strokeStyle = '#7DD3FC';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -945,6 +1066,23 @@ function drawArenaMap(
       ctx.stroke();
     }
 
+    // Stadium floodlight beams + cyber circuit arches
+    ctx.save();
+    for (const sx of [w * 0.18, w * 0.82]) {
+      const beam = ctx.createLinearGradient(sx, 0, w * 0.5, h * 0.72);
+      beam.addColorStop(0, 'rgba(56, 189, 248, 0.16)');
+      beam.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(sx - 24, 0);
+      ctx.lineTo(sx + 24, 0);
+      ctx.lineTo(sx + 130, h * 0.72);
+      ctx.lineTo(sx - 130, h * 0.72);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
     // Giant crossed neon sabers behind arena
     ctx.save();
     ctx.globalAlpha = 0.35;
@@ -967,29 +1105,46 @@ function drawArenaMap(
     ctx.fillText('VS', w * 0.5, h * 0.24);
     ctx.restore();
 
-    // Cyber platforms
+    // Metallic Cyber platforms with glowing cyan/gold rims & rivets
     const plats = getMapPlatforms('cyber', w, h, planks, now);
     for (const p of plats) {
       if (p.bounce) {
+        ctx.save();
+        ctx.shadowColor = '#22D3EE';
+        ctx.shadowBlur = 12;
         ctx.fillStyle = '#22D3EE';
         ctx.beginPath();
         ctx.roundRect(p.x, p.y, p.w, p.h, 5);
         ctx.fill();
+        ctx.restore();
         ctx.fillStyle = '#ECFEFF';
         ctx.fillRect(p.x + 6, p.y + 2, p.w - 12, 3);
       } else {
-        ctx.fillStyle = '#0F172A';
+        ctx.save();
+        ctx.shadowColor = '#38BDF8';
+        ctx.shadowBlur = 10;
+        const deckGrad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+        deckGrad.addColorStop(0, '#1E293B');
+        deckGrad.addColorStop(1, '#0F172A');
+        ctx.fillStyle = deckGrad;
         ctx.beginPath();
         ctx.roundRect(p.x, p.y, p.w, p.h, 6);
         ctx.fill();
-        ctx.strokeStyle = '#FACC15';
+        ctx.strokeStyle = '#38BDF8';
         ctx.lineWidth = 2.5;
         ctx.stroke();
+        ctx.restore();
 
-        // Hazard amber accent blocks
+        // Hazard amber accent blocks & rivets
         ctx.fillStyle = '#F59E0B';
         for (let bx = p.x + 12; bx < p.x + p.w - 22; bx += 38) {
           ctx.fillRect(bx, p.y + 5, 18, 4);
+        }
+        ctx.fillStyle = '#94A3B8';
+        for (let rx = p.x + 10; rx < p.x + p.w - 8; rx += 52) {
+          ctx.beginPath();
+          ctx.arc(rx, p.y + p.h - 5, 1.8, 0, Math.PI * 2);
+          ctx.fill();
         }
       }
     }
@@ -1034,16 +1189,29 @@ function drawArenaMap(
       ctx.fill();
     }
 
-    // Volcanic stone ledges
+    // Volcanic stone ledges with glowing magma rim
     const bankY = h * 0.65;
     const bankW = w * 0.22;
-    ctx.fillStyle = '#292524';
-    ctx.strokeStyle = '#57534E';
-    ctx.lineWidth = 3;
     for (const bx of [w * 0.06, w * 0.94 - bankW]) {
+      ctx.save();
+      ctx.shadowColor = '#F97316';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#292524';
+      ctx.strokeStyle = '#FB923C';
+      ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.roundRect(bx, bankY, bankW, h * 0.35, 8);
       ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Stone fissures
+      ctx.strokeStyle = 'rgba(251, 146, 60, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(bx + bankW * 0.3, bankY + 18);
+      ctx.lineTo(bx + bankW * 0.42, bankY + 46);
+      ctx.lineTo(bx + bankW * 0.36, bankY + 68);
       ctx.stroke();
     }
 
@@ -1169,16 +1337,15 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
   const [countdownNum, setCountdownNum] = useState<number>(3);
   const [secondsLeft, setSecondsLeft] = useState<number>(DEFAULT_MATCH_SECONDS);
   const [hpSnapshot, setHpSnapshot] = useState<number[]>(() => players.map(() => 100));
+  const [shieldChargesSnapshot, setShieldChargesSnapshot] = useState<number[]>(() =>
+    players.map(() => 2)
+  );
   const [roundDeltas, setRoundDeltas] = useState<ArcadeDelta[]>([]);
   const [finalSeriesDeltas, setFinalSeriesDeltas] = useState<ArcadeDelta[]>([]);
   const [seriesWinners, setSeriesWinners] = useState<ArcadePlayer[]>([]);
   const [summaryText, setSummaryText] = useState<string>('');
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
   const [muted, setMuted] = useState<boolean>(() => soundManager.isMuted());
-  const [isPortraitView, setIsPortraitView] = useState<boolean>(
-    () => typeof window !== 'undefined' && window.innerHeight > window.innerWidth
-  );
-  const [dismissPortraitHint, setDismissPortraitHint] = useState<boolean>(false);
   const [, setJoyRenderTick] = useState<number>(0);
 
   const arenaRef = useRef<HTMLDivElement | null>(null);
@@ -1189,6 +1356,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
   const projectilesRef = useRef<LaserProjectile[]>([]);
   const cratesRef = useRef<MysteryCrate[]>([]);
   const sparksRef = useRef<SparkParticle[]>([]);
+  const dustRef = useRef<DustPuff[]>([]);
   const shockwavesRef = useRef<ShockwaveRing[]>([]);
   const lightningRef = useRef<LightningFlash[]>([]);
   const bannersRef = useRef<FloatingBanner[]>([]);
@@ -1208,6 +1376,8 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
   const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isArenaMounted = phase === 'COUNTDOWN' || phase === 'PLAYING';
+  const { isRotatedPortrait } = useForceLandscape(isRoundActive);
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -1216,19 +1386,11 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     return soundManager.subscribe(setMuted);
   }, []);
 
-  // Landscape orientation lock while Stickman match is active + resize sync
+  // Sync landscape arena dimensions cleanly whenever orientation or viewport size changes
   useEffect(() => {
-    if (!isRoundActive) return;
-
-    const orientationApi = screen.orientation as
-      | { lock?: (mode: string) => Promise<void>; unlock?: () => void }
-      | undefined;
-    orientationApi?.lock?.('landscape').catch(() => {
-      // Unsupported in iOS/browser frames; fallback banner guides user cleanly
-    });
+    if (!isArenaMounted) return;
 
     const handleResize = () => {
-      setIsPortraitView(window.innerHeight > window.innerWidth);
       const el = arenaRef.current;
       if (el) {
         arenaSizeRef.current = {
@@ -1237,20 +1399,19 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         };
       }
     };
-    handleResize();
+    const raf = window.requestAnimationFrame(handleResize);
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
 
     return () => {
+      window.cancelAnimationFrame(raf);
+      ro.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
-      try {
-        orientationApi?.unlock?.();
-      } catch {
-        // Ignore unlock errors
-      }
     };
-  }, [isRoundActive]);
+  }, [isArenaMounted, isRotatedPortrait]);
 
   useEffect(() => {
     if (phase === 'PLAYING') {
@@ -1282,6 +1443,22 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         vy: Math.sin(a) * spd,
         color,
         size: 2.2 + Math.random() * 2.5,
+        life,
+        maxLife: life,
+      });
+    }
+  }, []);
+
+  const spawnDust = useCallback((x: number, y: number, count = 6, color = 'rgba(226, 232, 240, 0.85)') => {
+    for (let i = 0; i < count; i++) {
+      const life = 0.25 + Math.random() * 0.22;
+      dustRef.current.push({
+        x: x + (Math.random() - 0.5) * 14,
+        y: y + (Math.random() - 0.5) * 6,
+        vx: (Math.random() - 0.5) * 85,
+        vy: -18 - Math.random() * 48,
+        radius: 4 + Math.random() * 5,
+        color,
         life,
         maxLife: life,
       });
@@ -1362,10 +1539,16 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         hitFlashUntil: 0,
         ragdollUntil: 0,
         shieldActiveUntil: 0,
+        duckChargeSec: 0,
+        bubbleShieldUntil: 0,
+        shieldCharges: 2,
+        isDucking: false,
+        weaponTrail: [],
         tilt: 0,
         angVel: 0,
         runCycle: idx * 1.1,
         onGround: false,
+        wasOnGround: false,
         lastGroundedAt: 0,
         jumpsLeft: 2,
         jumpLatch: false,
@@ -1376,6 +1559,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     projectilesRef.current = [];
     cratesRef.current = [];
     sparksRef.current = [];
+    dustRef.current = [];
     shockwavesRef.current = [];
     lightningRef.current = [];
     bannersRef.current = [];
@@ -1385,6 +1569,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     koCelebrateAtRef.current = null;
     finishedRef.current = false;
     setHpSnapshot(players.map(() => 100));
+    setShieldChargesSnapshot(players.map(() => 2));
   }, [players, roundNum, selectedMapChoice, syncArenaSize]);
 
   const finishRound = useCallback(
@@ -1582,6 +1767,17 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         ctx.restore();
       }
 
+      // Dynamic dust puffs behind fighters (jumps, landings, dashes)
+      for (const dp of dustRef.current) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, (dp.life / dp.maxLife) * 0.65);
+        ctx.fillStyle = dp.color;
+        ctx.beginPath();
+        ctx.arc(dp.x, dp.y, dp.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Impact sparks
       for (const sp of sparksRef.current) {
         ctx.save();
@@ -1755,15 +1951,16 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
 
         if (joy && joy.mag > 0.06) {
           if (!isRagdoll) {
-            f.vx += joy.dx * moveAccel * dt;
+            const horizScale = f.onGround && joy.dy > 0.6 ? 0.35 : 1;
+            f.vx += joy.dx * moveAccel * horizScale * dt;
             if (Math.abs(joy.dx) > 0.12) {
               f.facing = joy.dx >= 0 ? 1 : -1;
             }
           }
           f.aimAngle = Math.atan2(joy.dy, joy.dx);
 
-          // Responsive jump with coyote time + reliable double jump
-          if (joy.dy < -0.44) {
+          // Responsive jump when joystick pushed upward (dy < -0.5) + coyote time & double jump
+          if (joy.dy < -0.5) {
             if (!f.jumpLatch && (canCoyoteJump || f.jumpsLeft > 0)) {
               const isGroundJump = canCoyoteJump;
               f.vy = isGroundJump ? -485 : -435;
@@ -1771,7 +1968,8 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               f.jumpsLeft = isGroundJump ? 1 : 0;
               f.jumpLatch = true;
               soundManager.play('bounce');
-              spawnSparks(f.x, f.y + 18, '#FFFFFF', 5);
+              spawnDust(f.x, f.y + 22, 7);
+              spawnSparks(f.x, f.y + 18, '#FFFFFF', 4);
               if (!isGroundJump) {
                 shockwavesRef.current.push({
                   x: f.x,
@@ -1788,6 +1986,46 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           }
         } else {
           f.jumpLatch = false;
+        }
+
+        // Ground-Duck Energy Shield (hold dy > 0.6 while on solid ground for 3 continuous seconds -> 4s bubble shield, 2/2 uses)
+        const holdingDuck =
+          f.onGround &&
+          !isRagdoll &&
+          Boolean(joy && joy.mag > 0.45 && joy.dy > 0.6);
+        f.isDucking = holdingDuck;
+        if (holdingDuck && f.bubbleShieldUntil <= now && f.shieldCharges > 0) {
+          f.duckChargeSec += dt;
+          if (f.duckChargeSec >= 3.0) {
+            f.duckChargeSec = 0;
+            f.shieldCharges -= 1;
+            f.bubbleShieldUntil = now + 4000;
+            soundManager.play('powerup');
+            triggerHaptic([25, 30, 35]);
+            spawnSparks(f.x, f.y - 4, '#22D3EE', 16);
+            shockwavesRef.current.push({
+              x: f.x,
+              y: f.y - 4,
+              radius: 14,
+              maxRadius: 68,
+              color: '#22D3EE',
+              life: 1,
+            });
+            bannersRef.current.push({
+              x: f.x,
+              y: f.y - 48,
+              text: `درع الطاقة! 🛡️ (${f.shieldCharges}/٢)`,
+              color: '#67E8F9',
+              life: 1.3,
+            });
+          }
+        } else {
+          f.duckChargeSec = 0;
+        }
+
+        // Running dust puffs
+        if (f.onGround && Math.abs(f.vx) > 155 && Math.random() < 0.28) {
+          spawnDust(f.x - Math.sign(f.vx) * 8, f.y + 21, 1);
         }
 
         // Pirate ship slope drift
@@ -1854,6 +2092,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         }
 
         // Ground collision by active map
+        f.wasOnGround = f.onGround;
         f.onGround = false;
 
         if (mapId === 'kraken') {
@@ -1889,6 +2128,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                 f.onGround = false;
                 f.jumpsLeft = 2;
                 soundManager.play('bounce');
+                spawnDust(f.x, plat.y, 7, 'rgba(103, 232, 249, 0.85)');
                 shockwavesRef.current.push({
                   x: f.x,
                   y: plat.y,
@@ -1905,6 +2145,9 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               }
             }
           }
+        }
+        if (f.onGround && !f.wasOnGround) {
+          spawnDust(f.x, f.y + footOffset, 5);
         }
 
         // Volcano bridge plank wear when stood upon
@@ -1980,6 +2223,24 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           }
         }
         f.weaponWorldAngle = desiredWorldAngle;
+
+        // Update animated weapon slash trail
+        f.weaponTrail = f.weaponTrail
+          .map((t) => ({ ...t, life: t.life - dt }))
+          .filter((t) => t.life > 0);
+        if (Math.abs(f.swingOffset) > 0.2 && f.weapon !== 'blaster' && f.weapon !== 'shield') {
+          const wg = getWeaponWorldGeometry(f);
+          f.weaponTrail.push({
+            handX: wg.handX,
+            handY: wg.handY,
+            tipX: wg.tipX,
+            tipY: wg.tipY,
+            life: 0.16,
+          });
+          if (f.weaponTrail.length > 7) {
+            f.weaponTrail.shift();
+          }
+        }
       }
 
       // 2. Weapon-vs-Weapon mid-air clash deflection + lightning clash flash
@@ -2090,7 +2351,8 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                 if (segHit.dist <= 20) {
                   if (target.invulnUntil > now) continue;
                   const isShielding =
-                    target.weapon === 'shield' && target.shieldActiveUntil + 220 > now;
+                    target.bubbleShieldUntil > now ||
+                    (target.weapon === 'shield' && target.shieldActiveUntil + 220 > now);
                   if (isShielding) {
                     const deflectAngle = Math.atan2(f.y - target.y, f.x - target.x);
                     f.vx = Math.cos(deflectAngle) * 390;
@@ -2098,6 +2360,13 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                     soundManager.play('clash');
                     screenShakeRef.current = Math.max(screenShakeRef.current, 6);
                     spawnSparks(segHit.cx, segHit.cy, '#38BDF8', 12);
+                    bannersRef.current.push({
+                      x: target.x,
+                      y: target.y - 44,
+                      text: 'محمي! 🛡️',
+                      color: '#67E8F9',
+                      life: 0.85,
+                    });
                     shockwavesRef.current.push({
                       x: target.x,
                       y: target.y - 8,
@@ -2117,6 +2386,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                   target.vx = Math.cos(knockAngle) * wMeta.knockback;
                   target.vy = Math.min(-215, Math.sin(knockAngle) * wMeta.knockback * 0.7 - 155);
                   target.angVel = Math.sign(target.vx || 1) * (f.weapon === 'hammer' ? 14 : 9.5);
+                  spawnDust(target.x, target.y, 6);
 
                   hitStopUntilRef.current = now + (f.weapon === 'hammer' ? 54 : 38);
                   screenShakeRef.current = Math.max(
@@ -2125,6 +2395,14 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                   );
                   soundManager.play(f.weapon === 'saber' ? 'clash' : 'hit');
                   triggerHaptic(f.weapon === 'hammer' ? 35 : 20);
+
+                  bannersRef.current.push({
+                    x: target.x + (Math.random() - 0.5) * 14,
+                    y: target.y - 38,
+                    text: `-${dmg}${dmg >= 20 ? ' 💥' : ''}`,
+                    color: dmg >= 20 ? '#F97316' : '#FCA5A5',
+                    life: 0.95,
+                  });
 
                   spawnSparks(
                     segHit.cx,
@@ -2174,7 +2452,14 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         // Energy Shield close-range shock push
         if (f.weapon === 'shield' && f.shieldActiveUntil > now && now >= f.attackCooldownUntil) {
           for (const target of fightersRef.current) {
-            if (!target.alive || target.playerIdx === f.playerIdx || target.invulnUntil > now) continue;
+            if (
+              !target.alive ||
+              target.playerIdx === f.playerIdx ||
+              target.invulnUntil > now ||
+              target.bubbleShieldUntil > now
+            ) {
+              continue;
+            }
             if (Math.hypot(target.x - f.x, target.y - f.y) < 52) {
               f.attackCooldownUntil = now + 450;
               const angle = Math.atan2(target.y - f.y - 10, target.x - f.x);
@@ -2186,6 +2471,13 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               screenShakeRef.current = Math.max(screenShakeRef.current, 6.5);
               soundManager.play('clash');
               triggerHaptic(22);
+              bannersRef.current.push({
+                x: target.x,
+                y: target.y - 36,
+                text: `-${WEAPONS.shield.damage}`,
+                color: '#38BDF8',
+                life: 0.9,
+              });
               shockwavesRef.current.push({
                 x: f.x,
                 y: f.y - 8,
@@ -2334,7 +2626,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
       }
       cratesRef.current = nextCrates;
 
-      // Update Laser Projectiles (including terrain collision)
+      // Update Laser Projectiles (including terrain collision & shield deflection)
       const nextProj: LaserProjectile[] = [];
       for (const proj of projectilesRef.current) {
         proj.x += proj.vx * dt;
@@ -2364,7 +2656,10 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         for (const target of fightersRef.current) {
           if (!target.alive || target.playerIdx === proj.ownerIdx || target.invulnUntil > now) continue;
           if (distPointToSegment(proj.x, proj.y, target.x, target.y - 24, target.x, target.y + 12) < 15) {
-            if (target.weapon === 'shield' && target.shieldActiveUntil + 220 > now) {
+            if (
+              target.bubbleShieldUntil > now ||
+              (target.weapon === 'shield' && target.shieldActiveUntil + 220 > now)
+            ) {
               proj.vx = -proj.vx;
               proj.vy = -proj.vy;
               proj.ownerIdx = target.playerIdx;
@@ -2373,7 +2668,8 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
             } else {
               hit = true;
               const knockDir = Math.sign(proj.vx || 1);
-              target.hp = Math.max(0, target.hp - WEAPONS.blaster.damage);
+              const dmg = WEAPONS.blaster.damage;
+              target.hp = Math.max(0, target.hp - dmg);
               target.vx = knockDir * WEAPONS.blaster.knockback;
               target.vy = -175;
               target.hitFlashUntil = now + 120;
@@ -2382,6 +2678,13 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               soundManager.play('hit');
               triggerHaptic(18);
               spawnSparks(proj.x, proj.y, proj.color, 10);
+              bannersRef.current.push({
+                x: target.x,
+                y: target.y - 36,
+                text: `-${dmg} ⚡`,
+                color: '#38BDF8',
+                life: 0.9,
+              });
               if (target.hp <= 0) {
                 target.alive = false;
                 target.koAt = now;
@@ -2413,6 +2716,16 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         }))
         .filter((s) => s.life > 0);
 
+      dustRef.current = dustRef.current
+        .map((d) => ({
+          ...d,
+          x: d.x + d.vx * dt,
+          y: d.y + d.vy * dt,
+          radius: d.radius + 14 * dt,
+          life: d.life - dt,
+        }))
+        .filter((d) => d.life > 0);
+
       shockwavesRef.current = shockwavesRef.current
         .map((sw) => ({
           ...sw,
@@ -2430,6 +2743,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         .filter((b) => b.life > 0);
 
       setHpSnapshot(fightersRef.current.map((f) => Math.round(f.hp)));
+      setShieldChargesSnapshot(fightersRef.current.map((f) => f.shieldCharges));
 
       // Check Last Stickman Standing
       const aliveList = fightersRef.current.filter((f) => f.alive);
@@ -2449,7 +2763,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
 
     rafId = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(rafId);
-  }, [phase, matchSeconds, players, drawScene, finishRound, spawnSparks]);
+  }, [phase, matchSeconds, players, drawScene, finishRound, spawnSparks, spawnDust]);
 
   // Strictly Fixed-Base Corner Joysticks with Isolated Multi-Touch
   const handleJoyStart = (idx: number, e: React.PointerEvent<HTMLDivElement>) => {
@@ -2465,16 +2779,19 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     const rect = e.currentTarget.getBoundingClientRect();
     const ox = rect.width / 2;
     const oy = rect.height / 2;
+    const cx = rect.left + ox;
+    const cy = rect.top + oy;
     const j = joysticksRef.current[idx];
     if (!j) return;
     j.activePointer = e.pointerId;
     j.originX = ox;
     j.originY = oy;
 
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const vx = px - ox;
-    const vy = py - oy;
+    const { dx: vx, dy: vy } = mapScreenDeltaToLandscape(
+      e.clientX - cx,
+      e.clientY - cy,
+      isRotatedPortrait
+    );
     const dist = Math.hypot(vx, vy);
     const clamped = Math.min(JOY_MAX_R, dist);
     const ang = Math.atan2(vy, vx);
@@ -2496,12 +2813,15 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     const rect = e.currentTarget.getBoundingClientRect();
     const ox = rect.width / 2;
     const oy = rect.height / 2;
+    const cx = rect.left + ox;
+    const cy = rect.top + oy;
     j.originX = ox;
     j.originY = oy;
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const vx = px - ox;
-    const vy = py - oy;
+    const { dx: vx, dy: vy } = mapScreenDeltaToLandscape(
+      e.clientX - cx,
+      e.clientY - cy,
+      isRotatedPortrait
+    );
     const dist = Math.hypot(vx, vy);
     const clamped = Math.min(JOY_MAX_R, dist);
     const ang = Math.atan2(vy, vx);
@@ -2612,51 +2932,50 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         </div>
       )}
 
-      {isRoundActive && (
-        <ArcadeFloatingHud
-          secondsLeft={secondsLeft}
-          stageLabel={`جولة ${roundNum}/${totalRounds} · ${activeMapMeta.emoji}`}
-          muted={muted}
-          onRequestExit={() => setShowExitConfirm(true)}
-        />
-      )}
-
-      {isRoundActive && (
+      {isArenaMounted && (
         <div
           ref={arenaRef}
           dir="ltr"
-          style={{ touchAction: 'none' }}
-          className="relative w-full h-full overflow-hidden"
+          style={
+            isRotatedPortrait
+              ? {
+                  width: '100dvh',
+                  height: '100vw',
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                  transformOrigin: 'center center',
+                  touchAction: 'none',
+                }
+              : { touchAction: 'none' }
+          }
+          className={
+            isRotatedPortrait
+              ? 'overflow-hidden bg-[#071324] z-10'
+              : 'relative w-full h-full overflow-hidden'
+          }
         >
+          <ArcadeFloatingHud
+            secondsLeft={secondsLeft}
+            stageLabel={`جولة ${roundNum}/${totalRounds} · ${activeMapMeta.emoji}`}
+            muted={muted}
+            positionMode="absolute"
+            onRequestExit={() => setShowExitConfirm(true)}
+          />
+
           <canvas
             ref={canvasRef}
             style={{ touchAction: 'none' }}
             className="w-full h-full block bg-[#071324]"
           />
 
-          {/* Dismissible non-blocking Landscape Orientation Prompt if user is in Portrait */}
-          {isPortraitView && !dismissPortraitHint && (
-            <div
-              dir="rtl"
-              className="absolute top-14 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-amber-500/95 text-[#0F172A] px-3.5 py-1.5 text-[11px] sm:text-xs font-black shadow-lg backdrop-blur-sm max-w-[92%]"
-            >
-              <span>📱🔄 لف الموبايل بالعرض لمتعة أكبر!</span>
-              <button
-                type="button"
-                onClick={() => setDismissPortraitHint(true)}
-                className="w-5 h-5 rounded-full bg-black/20 text-[#0F172A] flex items-center justify-center text-xs font-black"
-                aria-label="إخفاء"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Compact top HP strip */}
-          <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 flex-wrap justify-center max-w-[68%]">
+          {/* Compact top HP + Shield charge strip */}
+          <div className="pointer-events-none absolute top-[38px] left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 flex-wrap justify-center max-w-[78%]">
             {players.map((p, idx) => {
               const theme = ARCADE_COLORS[p.colorId];
               const hp = hpSnapshot[idx] ?? 0;
+              const shieldsLeft = shieldChargesSnapshot[idx] ?? 2;
               return (
                 <div
                   key={p.id}
@@ -2670,6 +2989,9 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                   />
                   <span className="truncate max-w-[54px]">{p.name}</span>
                   <span className="tabular-nums text-emerald-300">{hp}</span>
+                  <span className="tabular-nums text-cyan-300 text-[10px]">
+                    🛡️{shieldsLeft}/2
+                  </span>
                 </div>
               );
             })}
@@ -2687,7 +3009,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                 سلاح الجولة: {weaponMeta.emoji} {weaponMeta.name}
               </div>
               <p className="mt-2 text-xs font-extrabold text-white/85">
-                ارفع الجويستيك لفوق للنط · اضرب بالتحريك · خد الصناديق!
+                ارفع الجويستيك لفوق للنط · انزل لتحت ٣ ثواني لتفعيل درع الطاقة! 🛡️
               </p>
             </div>
           )}
@@ -2701,6 +3023,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
             const isActive = joy?.activePointer !== null;
             const kx = isActive && joy ? joy.knobX - joy.originX : 0;
             const ky = isActive && joy ? joy.knobY - joy.originY : 0;
+            const shieldsLeft = shieldChargesSnapshot[idx] ?? 2;
 
             return (
               <div
@@ -2723,11 +3046,11 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                   className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
-                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white truncate max-w-[100px] ${
+                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white truncate max-w-[110px] ${
                       placement.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                     }`}
                   >
-                    ⚔️ {player.name}
+                    ⚔️ {player.name} · 🛡️{shieldsLeft}/2
                   </span>
 
                   <div
