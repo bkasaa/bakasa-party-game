@@ -263,7 +263,8 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'ضربات الجزاء ⚽'}
-        exitVariant={isMatchInProgress ? 'home' : 'back'}
+        exitVariant={isMatchInProgress ? 'exit' : 'back'}
+        exitLabel={isMatchInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -713,8 +714,10 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="مباراة ضربات الجزاء لسه شغالة، لو خرجت دلوقتي النتيجة هتتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           clearAnimTimers();
           setShowExitConfirm(false);

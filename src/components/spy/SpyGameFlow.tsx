@@ -458,7 +458,8 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                     ? 'جاسوس الكورة ⚽'
                     : 'الجاسوس (بره القعدة)'
         }
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -601,7 +602,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                         style={{ animationDelay: `${(idx % 4) * 1.1}s` }}
                       />
                       <div className="relative flex items-center gap-4 min-w-0">
-                        <BannerThumb type={category.iconType} />
+                        <BannerThumb type={category.iconType} floatDelay={(idx % 5) * 0.3} />
                         <span className="text-xl font-black text-white truncate">
                           {category.name}
                         </span>

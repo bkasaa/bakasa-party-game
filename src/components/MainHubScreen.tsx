@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, Dices, Lock, Users } from 'lucide-react';
+import { ChevronLeft, Lock, Users } from 'lucide-react';
 import { BANNER_COLOR_CLASSES, HUB_GAMES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { GameId, Player } from '../types/game';
@@ -8,6 +8,7 @@ import { BannerThumb } from './BannerThumb';
 import { CardWatermark } from './CardWatermark';
 import { PWAInstallButton } from './PWAInstallButton';
 import { PlayerAvatar } from './PlayerAvatar';
+import { RichDiceIcon } from './RichGameIcons';
 import { TopBar } from './TopBar';
 
 interface MainHubScreenProps {
@@ -97,7 +98,13 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
 
   return (
     <div className="min-h-screen flex flex-col">
-      <TopBar title="تلعبوا إيه؟" exitVariant="back" exitLabel="تعديل اللاعبين" onExit={onEditPlayers} />
+      <TopBar
+        title="تلعبوا إيه؟"
+        exitVariant="back"
+        exitLabel="رجوع"
+        showSettingsButton
+        onExit={onEditPlayers}
+      />
 
       <main className="flex-1 w-full max-w-xl mx-auto px-4 pb-10 pt-2 flex flex-col">
         {/* Active players score summary strip */}
@@ -149,25 +156,30 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
           onClick={handleRandomPick}
           className="mb-5 w-full min-h-[54px] rounded-2xl qada-btn-amber px-4 py-2.5 flex items-center justify-center gap-2.5 text-[#1E293B] font-black text-base sm:text-lg transition-transform active:scale-95 disabled:opacity-85"
         >
-          <Dices className={`w-5 h-5 shrink-0 ${isSpinning ? 'animate-spin' : ''}`} />
+          <RichDiceIcon className={`w-6 h-6 shrink-0 ${isSpinning ? 'animate-spin' : ''}`} />
           <span>{isSpinning ? 'بنختار لكم لعبة...' : '🎲 فاجئنا! (اختيار عشوائي)'}</span>
         </button>
 
-        {/* Living Tactile Party Game Banners */}
-        <div className="flex flex-col gap-5">
+        {/* Liquid Glass Asymmetrical Bento Grid for Party Games */}
+        <div className="grid grid-cols-2 gap-3.5">
           {HUB_GAMES.map((game, idx) => {
             const style = BANNER_COLOR_CLASSES[game.color];
             const isHighlighted = rouletteId === game.id;
+            const isFeatured = idx === 0;
             return (
               <div
                 key={game.id}
-                className="animate-card-float"
-                style={{ animationDelay: `${idx * 0.45}s` }}
+                className={`animate-card-float ${isFeatured ? 'col-span-2' : 'h-full'}`}
+                style={{ animationDelay: `${idx * 0.35}s` }}
               >
                 <button
                   type="button"
                   onClick={() => handleCardTap(game.id, game.active, game.title)}
-                  className={`group relative overflow-hidden w-full min-h-[78px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card px-4 py-3 flex items-center justify-between gap-3 text-right ${
+                  className={`group relative overflow-hidden w-full h-full ${
+                    isFeatured
+                      ? 'min-h-[88px] px-4 py-3.5 flex items-center justify-between gap-3'
+                      : 'min-h-[152px] p-3.5 flex flex-col justify-between gap-2'
+                  } rounded-3xl ${style.bg} ${style.shadow} border ${style.border} backdrop-blur-md qada-spring-card text-right ${
                     !game.active ? 'opacity-80' : 'hover:brightness-105'
                   } ${
                     isHighlighted
@@ -177,9 +189,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                         : ''
                   }`}
                 >
-                  {/* Custom Vector Line-Art Watermark */}
                   <CardWatermark kind={game.id} />
-                  {/* Asymmetric floating corner circle & subtle shimmer */}
                   <div className="pointer-events-none absolute -top-6 -left-6 w-24 h-24 rounded-full bg-white/10" />
                   {game.active && (
                     <div
@@ -188,33 +198,57 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                     />
                   )}
 
-                  <div className="relative flex items-center gap-3.5 min-w-0">
-                    <BannerThumb type={game.id} locked={!game.active} floatDelay={idx * 0.35} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-lg sm:text-xl font-black text-white truncate">
-                          {game.title}
-                        </span>
-                        {!game.active && (
-                          <span className="inline-flex items-center gap-1 rounded-lg bg-black/25 border border-white/25 px-2 py-0.5 text-[11px] font-black text-amber-100 shrink-0">
-                            <Lock className="w-3 h-3" />
-                            قريباً
-                          </span>
+                  {isFeatured ? (
+                    <>
+                      <div className="relative flex items-center gap-3.5 min-w-0">
+                        <BannerThumb type={game.id} locked={!game.active} floatDelay={idx * 0.35} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-lg sm:text-xl font-black text-white truncate">
+                              {game.title}
+                            </span>
+                            {!game.active && (
+                              <span className="inline-flex items-center gap-1 rounded-lg bg-black/25 border border-white/25 px-2 py-0.5 text-[11px] font-black text-amber-100 shrink-0">
+                                <Lock className="w-3 h-3" />
+                                قريباً
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
+                            {game.subtitle}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="relative shrink-0 text-white/95 transition-transform group-hover:-translate-x-1">
+                        {game.active ? (
+                          <ChevronLeft className="w-6 h-6" />
+                        ) : (
+                          <Lock className="w-5 h-5 text-white/75" />
                         )}
                       </div>
-                      <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
-                        {game.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="relative shrink-0 text-white/95 transition-transform group-hover:-translate-x-1">
-                    {game.active ? (
-                      <ChevronLeft className="w-6 h-6" />
-                    ) : (
-                      <Lock className="w-5 h-5 text-white/75" />
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative flex items-start justify-between gap-2 w-full">
+                        <BannerThumb type={game.id} locked={!game.active} floatDelay={idx * 0.35} />
+                        <span className="shrink-0 text-white/90 mt-1 transition-transform group-hover:-translate-x-1">
+                          {game.active ? (
+                            <ChevronLeft className="w-5 h-5" />
+                          ) : (
+                            <Lock className="w-4 h-4 text-white/75" />
+                          )}
+                        </span>
+                      </div>
+                      <div className="relative min-w-0">
+                        <div className="text-base sm:text-lg font-black text-white leading-tight truncate">
+                          {game.title}
+                        </div>
+                        <p className="text-[11px] sm:text-xs font-bold text-white/90 line-clamp-2 mt-1 leading-snug">
+                          {game.subtitle}
+                        </p>
+                      </div>
+                    </>
+                  )}
                 </button>
               </div>
             );

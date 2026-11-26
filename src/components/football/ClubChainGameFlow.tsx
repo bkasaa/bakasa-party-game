@@ -231,7 +231,8 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'قول اسم لاعب 👕'}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -484,8 +485,10 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="الجولة شغالة دلوقتي، لو خرجت هيتلغي تقدم الجولة الحالية."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

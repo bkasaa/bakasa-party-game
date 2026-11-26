@@ -105,7 +105,7 @@ interface PitchBounds {
   goalHalfH: number;
 }
 
-const JOYSTICK_MAX_R = 26;
+const JOYSTICK_MAX_R = 36;
 const PLAYER_R = 15;
 const BALL_R = 10.5;
 const POST_R = 5.5;
@@ -117,18 +117,11 @@ const TEAM_COLORS = {
   1: { name: 'فريق اليمين', ringHex: '#ef4444', badgeBg: 'rgba(239, 68, 68, 0.88)' },
 } as const;
 
-const SLOT_QUADRANT_POS: Record<CornerSlot, string> = {
-  'top-left': 'top-0 left-0',
-  'top-right': 'top-0 right-0',
-  'bottom-left': 'bottom-0 left-0',
-  'bottom-right': 'bottom-0 right-0',
-};
-
-const SLOT_REST_ANCHOR: Record<CornerSlot, string> = {
-  'top-left': 'top-3 left-3',
-  'top-right': 'top-3 right-3',
-  'bottom-left': 'bottom-3 left-3',
-  'bottom-right': 'bottom-3 right-3',
+const SLOT_CORNER_POS: Record<CornerSlot, string> = {
+  'top-left': 'top-4 left-4',
+  'top-right': 'top-4 right-4',
+  'bottom-left': 'bottom-4 left-4',
+  'bottom-right': 'bottom-4 right-4',
 };
 
 function getPitchBounds(w: number, h: number): PitchBounds {
@@ -1168,21 +1161,32 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
-        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: spawnX, y: spawnY } : item
+        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: null, y: null } : item
       )
     );
   };
 
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic capture failures
+    }
     soundManager.unlock();
     triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
-    const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
-    const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
-    const cx = rect.left + localX;
-    const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    joyPointersRef.current.set(e.pointerId, {
+      playerIdx,
+      cx,
+      cy,
+      x: rect.width / 2,
+      y: rect.height / 2,
+      rect,
+    });
     const j = joysRef.current[playerIdx];
     j.lastValidPull = 0;
     const rawDx = e.clientX - cx;
@@ -1191,29 +1195,13 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       angle: Math.hypot(rawDx, rawDy) > 1 ? Math.atan2(rawDy, rawDx) : 0,
       time: performance.now(),
     };
-    updateJoy(playerIdx, rawDx, rawDy, localX, localY);
+    updateJoy(playerIdx, rawDx, rawDy, rect.width / 2, rect.height / 2);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
-    const rawDx = e.clientX - entry.cx;
-    const rawDy = e.clientY - entry.cy;
-    const dist = Math.hypot(rawDx, rawDy);
-    const elasticLimit = JOYSTICK_MAX_R * 1.45;
-    if (dist > elasticLimit) {
-      const excess = dist - elasticLimit;
-      const dirX = rawDx / dist;
-      const dirY = rawDy / dist;
-      const candidateCx = entry.cx + dirX * excess * 0.5;
-      const candidateCy = entry.cy + dirY * excess * 0.5;
-      const localX = Math.max(41, Math.min(entry.rect.width - 41, candidateCx - entry.rect.left));
-      const localY = Math.max(41, Math.min(entry.rect.height - 41, candidateCy - entry.rect.top));
-      entry.cx = entry.rect.left + localX;
-      entry.cy = entry.rect.top + localY;
-      entry.x = localX;
-      entry.y = localY;
-    }
+    e.preventDefault();
     updateJoy(entry.playerIdx, e.clientX - entry.cx, e.clientY - entry.cy, entry.x, entry.y);
   };
 
@@ -1221,6 +1209,13 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
     joyPointersRef.current.delete(e.pointerId);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
 
     const idx = entry.playerIdx;
     const j = joysRef.current[idx];
@@ -1484,14 +1479,13 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             </div>
           )}
 
-          {/* Compact Floating Corner 360° Joysticks with Short Player-Only Pill Badge */}
+          {/* Strictly Fixed Base Corner 360° Joysticks */}
           {players.map((player, idx) => {
             const def = cornerDefs[idx];
             const theme = ARCADE_COLORS[player.colorId];
             if (!def) return null;
             const jv = joyVisuals[idx] ?? { kx: 0, ky: 0, active: false, x: null, y: null };
             const teamHex = def.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex;
-            const isFloating = jv.x !== null && jv.y !== null;
 
             return (
               <div
@@ -1502,7 +1496,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                 onPointerUp={handleJoyUp}
                 onPointerCancel={handleJoyUp}
                 onLostPointerCapture={handleJoyUp}
-                className={`absolute ${SLOT_QUADRANT_POS[def.slot]} z-20 w-[38vw] max-w-[162px] h-[30dvh] max-h-[188px] cursor-pointer select-none`}
+                className={`absolute ${SLOT_CORNER_POS[def.slot]} z-20 w-[106px] h-[106px] rounded-full cursor-pointer select-none flex items-center justify-center`}
               >
                 <div
                   style={{
@@ -1510,24 +1504,15 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                     backgroundColor: jv.active
                       ? 'rgba(15, 23, 42, 0.45)'
                       : 'rgba(15, 23, 42, 0.28)',
-                    ...(isFloating
-                      ? {
-                          left: jv.x!,
-                          top: jv.y!,
-                          transform: 'translate(-50%, -50%)',
-                        }
-                      : {}),
                   }}
-                  className={`pointer-events-none absolute ${
-                    isFloating ? '' : SLOT_REST_ANCHOR[def.slot]
-                  } w-[82px] h-[82px] rounded-full border-3 backdrop-blur-[1px] shadow-lg flex items-center justify-center`}
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
                     style={{
                       backgroundColor: teamHex,
                       textOverflow: 'ellipsis',
                     }}
-                    className={`pointer-events-none absolute -top-5 px-1.5 py-0.5 rounded-full border border-white/45 text-[10px] font-black text-white whitespace-nowrap overflow-hidden max-w-[72px] shadow ${
+                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full border border-white/45 text-[10px] font-black text-white whitespace-nowrap overflow-hidden max-w-[92px] shadow ${
                       def.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                     }`}
                   >
@@ -1538,9 +1523,9 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                     style={{
                       backgroundColor: theme.hex,
                       borderColor: teamHex,
-                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
+                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.08 : 1})`,
                     }}
-                    className={`pointer-events-none w-9 h-9 rounded-full border-3 shadow-[0_3px_0_#111827] ${
+                    className={`pointer-events-none w-10 h-10 rounded-full border-[3px] shadow-[0_3px_0_#111827] ${
                       jv.active ? '' : 'transition-transform duration-150'
                     }`}
                   />

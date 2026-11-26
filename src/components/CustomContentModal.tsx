@@ -4,7 +4,6 @@ import {
   Flame,
   Layers,
   MessageSquareQuote,
-  PenLine,
   Plus,
   Sparkles,
   Trash2,
@@ -21,6 +20,7 @@ import {
   setCustomMode,
 } from '../utils/customContentStorage';
 import { soundManager, triggerHaptic } from '../utils/soundManager';
+import { RichIconBadge, RichPenIcon } from './RichGameIcons';
 
 interface CustomContentModalProps {
   open: boolean;
@@ -82,11 +82,14 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
   const [inputValue, setInputValue] = useState<string>('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  const [closing, setClosing] = useState<boolean>(false);
+
   useEffect(() => {
     if (open) {
       setData(getCustomContent());
       setInputValue('');
       setFeedback(null);
+      setClosing(false);
     }
   }, [open]);
 
@@ -97,6 +100,15 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
   }, [feedback]);
 
   if (!open) return null;
+
+  const handleAnimatedClose = () => {
+    soundManager.play('whoosh');
+    setClosing(true);
+    window.setTimeout(() => {
+      setClosing(false);
+      onClose();
+    }, 180);
+  };
 
   const currentTabMeta = TABS.find((t) => t.id === activeTab) ?? TABS[0];
   const activeItems = data[activeTab];
@@ -142,18 +154,24 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md ${
+        closing ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="custom-content-title"
     >
-      <div className="w-full max-w-lg max-h-[88vh] rounded-3xl qada-glass-modal flex flex-col overflow-hidden">
+      <div
+        className={`w-full max-w-lg max-h-[88vh] rounded-3xl qada-glass-modal flex flex-col overflow-hidden ${
+          closing ? 'animate-modal-out' : 'animate-modal-in'
+        }`}
+      >
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#E7DEC8]/70 dark:border-white/10 flex items-center justify-between gap-3 bg-white/45 dark:bg-[#0F172A]/55">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#FFF7ED] dark:bg-amber-950/60 border border-[#FDBA74] dark:border-amber-700 flex items-center justify-center text-[#EA7A18] dark:text-amber-400 shrink-0">
-              <PenLine className="w-5 h-5" />
-            </div>
+            <RichIconBadge tone="teal" size="sm">
+              <RichPenIcon className="w-6 h-6" />
+            </RichIconBadge>
             <div className="min-w-0">
               <h2
                 id="custom-content-title"
@@ -170,10 +188,7 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
           <button
             type="button"
             aria-label="إغلاق"
-            onClick={() => {
-              soundManager.play('click');
-              onClose();
-            }}
+            onClick={handleAnimatedClose}
             className="min-w-[40px] min-h-[40px] rounded-xl qada-glass-pill flex items-center justify-center text-[#1E293B] dark:text-white shrink-0"
           >
             <X className="w-5 h-5" />
@@ -320,10 +335,7 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
         <div className="p-4 border-t border-[#E7DEC8]/70 dark:border-white/10 bg-white/45 dark:bg-[#0F172A]/55">
           <button
             type="button"
-            onClick={() => {
-              soundManager.play('click');
-              onClose();
-            }}
+            onClick={handleAnimatedClose}
             className="w-full min-h-[48px] rounded-2xl bakasa-btn-green text-white font-black text-base"
           >
             تمام، حفظ ورجوع

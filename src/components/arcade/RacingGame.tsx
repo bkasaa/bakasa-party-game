@@ -54,14 +54,33 @@ interface CarEntity {
   darkHex: string;
   x: number;
   y: number;
+  vx: number;
+  vy: number;
   angle: number;
-  steerCur: number;
   lap: number;
   checkpointIdx: number; // 0..7 sequential checkpoints around loop
   bonusPoints: number;
   turboUntil: number;
   frozenUntil: number;
   finishedLapOrder: number | null;
+}
+
+interface JoyInput {
+  dx: number;
+  dy: number;
+  mag: number;
+}
+
+interface JoyVisual {
+  kx: number;
+  ky: number;
+  active: boolean;
+}
+
+interface TreeObstacle {
+  x: number;
+  y: number;
+  r: number;
 }
 
 interface TrackPickup {
@@ -89,8 +108,8 @@ interface FloatingPopup {
 
 const DEFAULT_TARGET_LAPS = 3;
 const ROUND_SAFETY_SECONDS = 48;
-const BASE_CAR_SPEED = 148;
-const TURN_RATE = 3.55;
+const BASE_CAR_SPEED = 172;
+const JOY_MAX_R = 40;
 const NUM_CHECKPOINTS = 8;
 
 const SLOT_CORNER_POS: Record<CornerSlot, string> = {
@@ -298,7 +317,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
   const [countdownNum, setCountdownNum] = useState<number>(3);
   const [secondsLeft, setSecondsLeft] = useState<number>(ROUND_SAFETY_SECONDS);
   const [carLaps, setCarLaps] = useState<number[]>(() => players.map(() => 1));
-  const [steerVisuals, setSteerVisuals] = useState<number[]>(() => players.map(() => 0));
+  const [joyVisuals, setJoyVisuals] = useState<JoyVisual[]>(() =>
+    players.map(() => ({ kx: 0, ky: 0, active: false }))
+  );
   const [activeStates, setActiveStates] = useState<
     Array<{ turbo: boolean; frozen: boolean }>
   >(() => players.map(() => ({ turbo: false, frozen: false })));
@@ -316,6 +337,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
   const arenaSizeRef = useRef<{ w: number; h: number }>({ w: 390, h: 760 });
   const trackLoopRef = useRef<Vec2[]>([]);
   const roadWidthRef = useRef<number>(64);
+  const treesRef = useRef<TreeObstacle[]>([]);
   const carsRef = useRef<CarEntity[]>([]);
   const spectatorsRef = useRef<TrackSpectator[]>([]);
   const crowdCheerUntilRef = useRef<number>(0);
@@ -323,10 +345,12 @@ export const RacingGame: React.FC<RacingGameProps> = ({
   const pickupsRef = useRef<TrackPickup[]>([]);
   const exhaustRef = useRef<ExhaustParticle[]>([]);
   const popupsRef = useRef<FloatingPopup[]>([]);
-  const steerInputsRef = useRef<number[]>(players.map(() => 0));
-  const wheelPointersRef = useRef<Map<number, { playerIdx: number; cx: number }>>(new Map());
-  const lastSteerHapticRef = useRef<Array<{ sign: number; steer: number; time: number }>>(
-    players.map(() => ({ sign: 0, steer: 0, time: 0 }))
+  const joyInputsRef = useRef<JoyInput[]>(players.map(() => ({ dx: 0, dy: 0, mag: 0 })));
+  const wheelPointersRef = useRef<Map<number, { playerIdx: number; cx: number; cy: number }>>(
+    new Map()
+  );
+  const lastJoyHapticRef = useRef<Array<{ sector: number; time: number }>>(
+    players.map(() => ({ sector: -1, time: 0 }))
   );
   const nextPickupIdRef = useRef<number>(1);
   const nextSpawnAtRef = useRef<number>(0);
@@ -453,7 +477,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
       }
       ctx.restore();
 
-      // Decorative trees along safe center/margins away from road
+      // Decorative trees along safe center/margins away from road (stored for smooth sliding collisions)
       const treeCandidates = [
         { x: w * 0.5, y: h * 0.5 },
         { x: w * 0.5, y: h * 0.1 },
@@ -461,8 +485,10 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         { x: w * 0.08, y: h * 0.5 },
         { x: w * 0.92, y: h * 0.5 },
       ];
+      const placedTrees: TreeObstacle[] = [];
       for (const tc of treeCandidates) {
-        if (closestTrackPoint(tc.x, tc.y, loop).dist > roadW * 0.92) {
+        if (closestTrackPoint(tc.x, tc.y, loop).dist > roadW * 0.95) {
+          placedTrees.push({ x: tc.x, y: tc.y, r: 14 });
           ctx.fillStyle = '#15803d';
           ctx.strokeStyle = '#14532d';
           ctx.lineWidth = 2.5;
@@ -472,6 +498,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
           ctx.stroke();
         }
       }
+      treesRef.current = placedTrees;
 
       return buf;
     },
@@ -508,8 +535,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         darkHex: theme.darkHex,
         x: startPt.x + perpX * lat - forwardX * back,
         y: startPt.y + perpY * lat - forwardY * back,
+        vx: 0,
+        vy: 0,
         angle: startAngle,
-        steerCur: 0,
         lap: 1,
         checkpointIdx: 0,
         bonusPoints: 0,
@@ -533,7 +561,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
       });
     }
 
-    // Pre-compute trackside spectator stands safely away from road & corner steering wheels
+    // Pre-compute trackside spectator stands safely away from road & corner joysticks
     const specColors = ['#ef4444', '#38bdf8', '#facc15', '#10b981', '#ffffff', '#f97316'];
     const spectatorCandidates = [
       { x: w * 0.42, y: 38 },
@@ -562,10 +590,10 @@ export const RacingGame: React.FC<RacingGameProps> = ({
 
     exhaustRef.current = [];
     popupsRef.current = [];
-    steerInputsRef.current = players.map(() => 0);
+    joyInputsRef.current = players.map(() => ({ dx: 0, dy: 0, mag: 0 }));
     wheelPointersRef.current.clear();
     finishedRef.current = false;
-    setSteerVisuals(players.map(() => 0));
+    setJoyVisuals(players.map(() => ({ kx: 0, ky: 0, active: false })));
     setCarLaps(players.map(() => 1));
     setActiveStates(players.map(() => ({ turbo: false, frozen: false })));
   }, [buildTrackBuffer, currentRound, players, syncArenaSize]);
@@ -840,31 +868,86 @@ export const RacingGame: React.FC<RacingGameProps> = ({
 
       for (let i = 0; i < carsRef.current.length; i++) {
         const car = carsRef.current[i];
-        if (car.frozenUntil > now) continue;
+        if (car.frozenUntil > now) {
+          car.vx = 0;
+          car.vy = 0;
+          continue;
+        }
 
-        const targetSteer = steerInputsRef.current[i] ?? 0;
-        car.steerCur += (targetSteer - car.steerCur) * (1 - Math.exp(-22 * dt));
-        car.angle += car.steerCur * TURN_RATE * dt;
-
+        const joy = joyInputsRef.current[i] ?? { dx: 0, dy: 0, mag: 0 };
         const trackInfo = closestTrackPoint(car.x, car.y, loop);
-        const onGrass = trackInfo.dist > roadW * 0.54;
+        const onGrass = trackInfo.dist > roadW * 0.58;
         const isTurbo = car.turboUntil > now;
+        const maxSpeed =
+          BASE_CAR_SPEED * (isTurbo ? 1.58 : 1) * (onGrass && !isTurbo ? 0.72 : 1);
 
-        const speed =
-          BASE_CAR_SPEED * (isTurbo ? 1.65 : 1) * (onGrass && !isTurbo ? 0.62 : 1);
+        if (joy.mag > 0.01) {
+          // 360-degree Brawl-Stars-style direct arcade steering with instant crisp rotation
+          const targetAngle = Math.atan2(joy.dy, joy.dx);
+          const angleDiff = Math.atan2(
+            Math.sin(targetAngle - car.angle),
+            Math.cos(targetAngle - car.angle)
+          );
+          car.angle += angleDiff * (1 - Math.exp(-26 * dt));
 
-        car.x += Math.cos(car.angle) * speed * dt;
-        car.y += Math.sin(car.angle) * speed * dt;
+          const throttle = Math.min(1, 0.32 + joy.mag * 0.68);
+          const targetVx = joy.dx * maxSpeed * throttle;
+          const targetVy = joy.dy * maxSpeed * throttle;
+          const accelLerp = 1 - Math.exp(-20 * dt);
+          car.vx += (targetVx - car.vx) * accelLerp;
+          car.vy += (targetVy - car.vy) * accelLerp;
+        } else {
+          // Clean, immediate braking on joystick release (zero ice drift)
+          const brake = Math.exp(-18 * dt);
+          car.vx *= brake;
+          car.vy *= brake;
+          if (Math.hypot(car.vx, car.vy) < 4) {
+            car.vx = 0;
+            car.vy = 0;
+          }
+        }
 
-        // Keep cars inside arena screen margins
+        car.x += car.vx * dt;
+        car.y += car.vy * dt;
+
+        // Forgiving wall boundaries: slide smoothly along screen edges without sticking
         const margin = 20;
-        if (car.x < margin) car.x = margin;
-        if (car.x > w - margin) car.x = w - margin;
-        if (car.y < margin) car.y = margin;
-        if (car.y > h - margin) car.y = h - margin;
+        if (car.x < margin) {
+          car.x = margin;
+          if (car.vx < 0) car.vx = 0;
+        } else if (car.x > w - margin) {
+          car.x = w - margin;
+          if (car.vx > 0) car.vx = 0;
+        }
+        if (car.y < margin) {
+          car.y = margin;
+          if (car.vy < 0) car.vy = 0;
+        } else if (car.y > h - margin) {
+          car.y = h - margin;
+          if (car.vy > 0) car.vy = 0;
+        }
+
+        // Forgiving tangent sliding around tree obstacles
+        for (const tree of treesRef.current) {
+          const dx = car.x - tree.x;
+          const dy = car.y - tree.y;
+          const dist = Math.hypot(dx, dy);
+          const minDist = tree.r + 12;
+          if (dist > 0.001 && dist < minDist) {
+            const nx = dx / dist;
+            const ny = dy / dist;
+            car.x = tree.x + nx * minDist;
+            car.y = tree.y + ny * minDist;
+            const vn = car.vx * nx + car.vy * ny;
+            if (vn < 0) {
+              car.vx -= vn * nx;
+              car.vy -= vn * ny;
+            }
+          }
+        }
 
         // Flame exhaust trail when boosting
-        if (isTurbo && Math.random() < 0.75) {
+        if (isTurbo && Math.hypot(car.vx, car.vy) > 20 && Math.random() < 0.75) {
           exhaustRef.current.push({
             x: car.x - Math.cos(car.angle) * 16,
             y: car.y - Math.sin(car.angle) * 16,
@@ -873,13 +956,13 @@ export const RacingGame: React.FC<RacingGameProps> = ({
           });
         }
 
-        // Sequential checkpoint & lap progression
-        if (loop.length > 0 && !onGrass) {
+        // Sequential checkpoint & lap progression (forgiving road tolerance)
+        if (loop.length > 0 && trackInfo.dist <= roadW * 0.85) {
           const cp = Math.floor((trackInfo.idx / loop.length) * NUM_CHECKPOINTS);
           if (cp === car.checkpointIdx + 1 || (cp === car.checkpointIdx + 2 && cp < NUM_CHECKPOINTS)) {
             car.checkpointIdx = cp;
-          } else if (car.checkpointIdx >= NUM_CHECKPOINTS - 2 && cp === 0) {
-            car.checkpointIdx = 0;
+          } else if (car.checkpointIdx >= NUM_CHECKPOINTS - 2 && (cp === 0 || cp === 1)) {
+            car.checkpointIdx = cp;
             car.lap += 1;
             uiDirty = true;
             crowdCheerUntilRef.current = now + 2000;
@@ -1012,52 +1095,73 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, targetLaps, drawScene, finishRound]);
 
-  // Ultra-Responsive Circular Steering Wheel Multi-Touch Handlers
-  const updateSteer = (playerIdx: number, clientX: number, cx: number) => {
-    const raw = Math.max(-1, Math.min(1, (clientX - cx) / 28));
-    const steer = Math.sign(raw) * Math.pow(Math.abs(raw), 0.9);
-    steerInputsRef.current[playerIdx] = steer;
-    setSteerVisuals((prev) => prev.map((v, i) => (i === playerIdx ? steer : v)));
+  // Zero-Deadzone 360-Degree Corner Arcade Joystick Multi-Touch Handlers
+  const updateJoystick360 = (playerIdx: number, clientX: number, clientY: number, cx: number, cy: number) => {
+    const vx = clientX - cx;
+    const vy = clientY - cy;
+    const dist = Math.hypot(vx, vy);
 
-    const sign = Math.abs(steer) > 0.12 ? Math.sign(steer) : 0;
-    const prevH = lastSteerHapticRef.current[playerIdx];
+    if (dist < 0.5) {
+      joyInputsRef.current[playerIdx] = { dx: 0, dy: 0, mag: 0 };
+      setJoyVisuals((prev) =>
+        prev.map((v, i) => (i === playerIdx ? { kx: 0, ky: 0, active: true } : v))
+      );
+      return;
+    }
+
+    const clamped = Math.min(JOY_MAX_R, dist);
+    const nx = vx / dist;
+    const ny = vy / dist;
+    const mag = Math.min(1, dist / JOY_MAX_R);
+    const kx = nx * clamped;
+    const ky = ny * clamped;
+
+    joyInputsRef.current[playerIdx] = { dx: nx, dy: ny, mag };
+    setJoyVisuals((prev) =>
+      prev.map((v, i) => (i === playerIdx ? { kx, ky, active: true } : v))
+    );
+
+    const ang = Math.atan2(ny, nx);
+    const sector = mag > 0.35 ? Math.floor(((ang + Math.PI) / (Math.PI * 2)) * 4) % 4 : -1;
+    const prevH = lastJoyHapticRef.current[playerIdx];
     const now = performance.now();
-    if (prevH && sign !== 0 && now - prevH.time >= 95) {
-      if ((prevH.sign !== 0 && prevH.sign !== sign) || Math.abs(steer - prevH.steer) >= 0.7) {
-        triggerHaptic(15);
-        prevH.sign = sign;
-        prevH.steer = steer;
-        prevH.time = now;
-      } else if (prevH.sign === 0) {
-        prevH.sign = sign;
-        prevH.steer = steer;
-      }
+    if (prevH && sector !== -1 && sector !== prevH.sector && now - prevH.time >= 90) {
+      if (prevH.sector !== -1) triggerHaptic(15);
+      prevH.sector = sector;
+      prevH.time = now;
     }
   };
 
   const handleWheelDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic capture failures
+    }
     soundManager.unlock();
     triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
     const cx = rect.left + rect.width / 2;
-    wheelPointersRef.current.set(e.pointerId, { playerIdx, cx });
-    lastSteerHapticRef.current[playerIdx] = { sign: 0, steer: 0, time: performance.now() };
-    updateSteer(playerIdx, e.clientX, cx);
+    const cy = rect.top + rect.height / 2;
+    wheelPointersRef.current.set(e.pointerId, { playerIdx, cx, cy });
+    lastJoyHapticRef.current[playerIdx] = { sector: -1, time: performance.now() };
+    updateJoystick360(playerIdx, e.clientX, e.clientY, cx, cy);
   };
 
   const handleWheelMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = wheelPointersRef.current.get(e.pointerId);
     if (!entry) return;
-    updateSteer(entry.playerIdx, e.clientX, entry.cx);
+    updateJoystick360(entry.playerIdx, e.clientX, e.clientY, entry.cx, entry.cy);
   };
 
   const handleWheelUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = wheelPointersRef.current.get(e.pointerId);
     if (!entry) return;
     wheelPointersRef.current.delete(e.pointerId);
-    steerInputsRef.current[entry.playerIdx] = 0;
-    setSteerVisuals((prev) => prev.map((v, i) => (i === entry.playerIdx ? 0 : v)));
+    joyInputsRef.current[entry.playerIdx] = { dx: 0, dy: 0, mag: 0 };
+    setJoyVisuals((prev) =>
+      prev.map((v, i) => (i === entry.playerIdx ? { kx: 0, ky: 0, active: false } : v))
+    );
   };
 
   return (
@@ -1070,7 +1174,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="سباق العربيات"
-            subtitle="لف الدركسيون في زاويتك واجمع التيربو والنجوم لتكسب اللفات على حلبات متزايدة الصعوبة!"
+            subtitle="حرك الجويستيك ٣٦٠° في زاويتك لتحرك عربيتك فوراً في أي اتجاه واجمع التيربو والنجوم لتكسب اللفات!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#dc2626] to-[#f59e0b]"
             icon={<Car className="w-12 h-12 text-white" />}
@@ -1144,13 +1248,13 @@ export const RacingGame: React.FC<RacingGameProps> = ({
             </div>
           )}
 
-          {/* Circular Corner Steering Wheel Controllers */}
+          {/* Fixed 360-Degree Corner Arcade Joysticks */}
           {players.map((player, idx) => {
             const placement = placements[idx];
             const theme = ARCADE_COLORS[player.colorId];
             if (!placement) return null;
 
-            const steer = steerVisuals[idx] ?? 0;
+            const joy = joyVisuals[idx] ?? { kx: 0, ky: 0, active: false };
             const lap = carLaps[idx] ?? 1;
             const st = activeStates[idx] ?? { turbo: false, frozen: false };
 
@@ -1163,42 +1267,41 @@ export const RacingGame: React.FC<RacingGameProps> = ({
                 onPointerUp={handleWheelUp}
                 onPointerCancel={handleWheelUp}
                 onLostPointerCapture={handleWheelUp}
-                className={`absolute ${SLOT_CORNER_POS[placement.slot]} z-20 w-[110px] h-[110px] rounded-full flex items-center justify-center cursor-pointer select-none`}
+                className={`absolute ${SLOT_CORNER_POS[placement.slot]} z-20 w-[114px] h-[114px] rounded-full flex items-center justify-center cursor-pointer select-none`}
               >
-                {/* Label badge outside wheel */}
+                {/* Label badge outside joystick */}
                 <span
-                  className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-md bg-black/70 text-[11px] font-black text-white truncate max-w-[104px] tabular-nums ${
+                  className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-md bg-black/75 text-[11px] font-black text-white truncate max-w-[108px] tabular-nums ${
                     placement.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                   }`}
                 >
                   {st.frozen ? '❄️ مجمد' : `${player.name} (${lap}/${targetLaps})`}
                 </span>
 
-                {/* Rotating Cartoon Steering Wheel */}
+                {/* 360-Degree Virtual Joystick Ring */}
                 <div
                   style={{
-                    transform: `rotate(${steer * 68}deg)`,
+                    borderColor: st.frozen ? '#bae6fd' : st.turbo ? '#fb923c' : theme.hex,
                   }}
-                  className={`pointer-events-none relative w-full h-full rounded-full border-[11px] border-[#111827] bg-black/25 shadow-[0_5px_0_rgba(0,0,0,0.45)] flex items-center justify-center ${
-                    steer !== 0 ? '' : 'transition-transform duration-150'
-                  }`}
+                  className="pointer-events-none relative w-full h-full rounded-full border-[4px] bg-slate-950/35 backdrop-blur-[2px] shadow-[0_5px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
                 >
-                  {/* Top yellow steering reference marker */}
-                  <span className="absolute -top-[10px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-r-[6px] border-b-[10px] border-l-transparent border-r-transparent border-b-[#facc15]" />
+                  {/* Subtle 4-way guide ticks */}
+                  <span className="absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-2 rounded-full bg-white/40" />
+                  <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-2 rounded-full bg-white/40" />
+                  <span className="absolute left-1.5 top-1/2 -translate-y-1/2 w-2 h-1.5 rounded-full bg-white/40" />
+                  <span className="absolute right-1.5 top-1/2 -translate-y-1/2 w-2 h-1.5 rounded-full bg-white/40" />
 
-                  {/* 3 Wheel Spokes */}
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1/2 h-3 bg-[#111827]" />
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1/2 h-3 bg-[#111827]" />
-                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3.5 h-1/2 bg-[#111827]" />
-
-                  {/* Colored Center Horn Cap */}
+                  {/* Responsive Thumb Knob */}
                   <div
                     style={{
+                      transform: `translate(${joy.kx}px, ${joy.ky}px) scale(${joy.active ? 1.12 : 1})`,
                       backgroundColor: st.frozen ? '#bae6fd' : st.turbo ? '#fb923c' : theme.hex,
                     }}
-                    className="relative z-10 w-10 h-10 rounded-full border-3 border-[#111827] flex items-center justify-center"
+                    className={`relative z-10 w-12 h-12 rounded-full border-[3px] border-white shadow-lg flex items-center justify-center ${
+                      joy.active ? 'transition-none' : 'transition-transform duration-150'
+                    }`}
                   >
-                    <span className="w-3 h-3 rounded-full bg-white/45" />
+                    <span className="w-3.5 h-3.5 rounded-full bg-white/45" />
                   </div>
                 </div>
               </div>
@@ -1261,8 +1364,10 @@ export const RacingGame: React.FC<RacingGameProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="الخروج من سباق العربيات؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="السباق لسه شغال، لو خرجت دلوقتي النتيجة مش هتتحسب."
+        cancelLabel="كمل لعب"
+        confirmLabel="نعم، اخرج"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToArcadeHub();

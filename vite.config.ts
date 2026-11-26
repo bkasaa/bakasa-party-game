@@ -64,6 +64,7 @@ export default defineConfig(() => {
         },
         workbox: {
           cacheId: 'qa3det-el-shella-v2',
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           globPatterns: [
             '**/*.{js,css,html,ico,png,jpg,jpeg,webp,svg,woff,woff2,mp3,wav,ogg,m4a,json}',
           ],

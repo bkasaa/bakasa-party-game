@@ -84,20 +84,13 @@ const BASE_SPEED = 148;
 const BASE_BRUSH = 34;
 const PAINT_SCALE = 0.5;
 const BG_RGB: [number, number, number] = [247, 231, 203];
-const JOYSTICK_MAX_R = 26;
+const JOYSTICK_MAX_R = 36;
 
-const SLOT_QUADRANT_POS: Record<CornerSlot, string> = {
-  'top-left': 'top-0 left-0',
-  'top-right': 'top-0 right-0',
-  'bottom-left': 'bottom-0 left-0',
-  'bottom-right': 'bottom-0 right-0',
-};
-
-const SLOT_REST_ANCHOR: Record<CornerSlot, string> = {
-  'top-left': 'top-3 left-3',
-  'top-right': 'top-3 right-3',
-  'bottom-left': 'bottom-3 left-3',
-  'bottom-right': 'bottom-3 right-3',
+const SLOT_CORNER_POS: Record<CornerSlot, string> = {
+  'top-left': 'top-4 left-4',
+  'top-right': 'top-4 right-4',
+  'bottom-left': 'bottom-4 left-4',
+  'bottom-right': 'bottom-4 right-4',
 };
 
 const SLOT_ROTATE_STYLE: Record<CornerSlot, string> = {
@@ -799,51 +792,42 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, matchSeconds, drawScene, computeCoverageAndFinish]);
 
-  // Floating Multi-Touch 360° Virtual Analog Joystick handlers (Zero-deadzone + Haptics)
+  // Strictly Fixed-Base Multi-Touch 360° Virtual Analog Joystick handlers
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic capture failures
+    }
     soundManager.unlock();
     triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
-    const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
-    const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
-    const cx = rect.left + localX;
-    const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    joyPointersRef.current.set(e.pointerId, {
+      playerIdx,
+      cx,
+      cy,
+      x: rect.width / 2,
+      y: rect.height / 2,
+      rect,
+    });
     lastJoyHapticRef.current[playerIdx] = { angle: 0, time: performance.now() };
-    updateJoyFromCoords(playerIdx, e.clientX - cx, e.clientY - cy, localX, localY);
+    updateJoyFromCoords(playerIdx, e.clientX - cx, e.clientY - cy);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
-    let rawDx = e.clientX - entry.cx;
-    let rawDy = e.clientY - entry.cy;
-    const dist = Math.hypot(rawDx, rawDy);
-    const followLimit = JOYSTICK_MAX_R * 1.45;
-    if (dist > followLimit) {
-      const shift = dist - followLimit;
-      const ux = rawDx / dist;
-      const uy = rawDy / dist;
-      const nextLocalX = Math.max(36, Math.min(entry.rect.width - 36, entry.x + ux * shift));
-      const nextLocalY = Math.max(36, Math.min(entry.rect.height - 36, entry.y + uy * shift));
-      entry.x = nextLocalX;
-      entry.y = nextLocalY;
-      entry.cx = entry.rect.left + nextLocalX;
-      entry.cy = entry.rect.top + nextLocalY;
-      rawDx = e.clientX - entry.cx;
-      rawDy = e.clientY - entry.cy;
-    }
-    updateJoyFromCoords(entry.playerIdx, rawDx, rawDy, entry.x, entry.y);
+    e.preventDefault();
+    const rawDx = e.clientX - entry.cx;
+    const rawDy = e.clientY - entry.cy;
+    updateJoyFromCoords(entry.playerIdx, rawDx, rawDy);
   };
 
-  const updateJoyFromCoords = (
-    playerIdx: number,
-    rawDx: number,
-    rawDy: number,
-    spawnX: number,
-    spawnY: number
-  ) => {
+  const updateJoyFromCoords = (playerIdx: number, rawDx: number, rawDy: number) => {
     const dist = Math.hypot(rawDx, rawDy);
     const active = dist > 0.5;
     const clampedDist = Math.min(JOYSTICK_MAX_R, dist);
@@ -863,7 +847,7 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     joyVectorsRef.current[playerIdx] = { dx: rawDx, dy: rawDy, active };
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
-        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: spawnX, y: spawnY } : item
+        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: null, y: null } : item
       )
     );
   };
@@ -872,6 +856,13 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
     joyPointersRef.current.delete(e.pointerId);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
     joyVectorsRef.current[entry.playerIdx] = { dx: 0, dy: 0, active: false };
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
@@ -973,7 +964,6 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
 
             const jv = joyVisuals[idx] ?? { kx: 0, ky: 0, active: false, x: null, y: null };
             const eff = activeEffects[idx] ?? { giant: false, speed: false, frozen: false };
-            const isFloating = jv.x !== null && jv.y !== null;
 
             return (
               <div
@@ -984,35 +974,26 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
                 onPointerUp={handleJoyUp}
                 onPointerCancel={handleJoyUp}
                 onLostPointerCapture={handleJoyUp}
-                className={`absolute ${SLOT_QUADRANT_POS[placement.slot]} z-20 w-[38vw] max-w-[162px] h-[30dvh] max-h-[188px] cursor-pointer select-none`}
+                className={`absolute ${SLOT_CORNER_POS[placement.slot]} z-20 w-[106px] h-[106px] rounded-full cursor-pointer select-none flex items-center justify-center`}
               >
                 <div
                   style={{
                     borderColor: eff.frozen ? '#7dd3fc' : theme.hex,
                     backgroundColor: eff.frozen
-                      ? 'rgba(14, 165, 233, 0.32)'
+                      ? 'rgba(14, 165, 233, 0.34)'
                       : jv.active
-                        ? 'rgba(15, 23, 42, 0.42)'
-                        : 'rgba(15, 23, 42, 0.26)',
-                    ...(isFloating
-                      ? {
-                          left: jv.x!,
-                          top: jv.y!,
-                          transform: 'translate(-50%, -50%)',
-                        }
-                      : {}),
+                        ? 'rgba(15, 23, 42, 0.44)'
+                        : 'rgba(15, 23, 42, 0.28)',
                   }}
-                  className={`pointer-events-none absolute ${
-                    isFloating ? '' : SLOT_REST_ANCHOR[placement.slot]
-                  } w-[82px] h-[82px] rounded-full border-3 backdrop-blur-[1px] shadow-lg flex items-center justify-center`}
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
-                  <span className="pointer-events-none absolute top-1.5 w-1 h-1 rounded-full bg-white/45" />
-                  <span className="pointer-events-none absolute bottom-1.5 w-1 h-1 rounded-full bg-white/45" />
-                  <span className="pointer-events-none absolute left-1.5 w-1 h-1 rounded-full bg-white/45" />
-                  <span className="pointer-events-none absolute right-1.5 w-1 h-1 rounded-full bg-white/45" />
+                  <span className="pointer-events-none absolute top-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />
+                  <span className="pointer-events-none absolute bottom-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />
+                  <span className="pointer-events-none absolute left-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />
+                  <span className="pointer-events-none absolute right-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />
 
                   <span
-                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/60 text-[10px] font-black text-white truncate max-w-[82px] ${
+                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/70 text-[10px] font-black text-white truncate max-w-[98px] ${
                       placement.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                     }`}
                   >
@@ -1022,9 +1003,9 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
                   <div
                     style={{
                       backgroundColor: eff.frozen ? '#bae6fd' : theme.hex,
-                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
+                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.08 : 1})`,
                     }}
-                    className={`pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] flex items-center justify-center ${
+                    className={`pointer-events-none w-10 h-10 rounded-full border-[3px] border-[#111827] shadow-[0_3px_0_#111827] flex items-center justify-center ${
                       jv.active ? '' : 'transition-transform duration-150'
                     }`}
                   >

@@ -338,7 +338,8 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'خمن في الكورة 🎙️'}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -682,8 +683,10 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="الدور لسه شغال، لو خرجت دلوقتي نقاط الجولة الحالية مش هتتحسب."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

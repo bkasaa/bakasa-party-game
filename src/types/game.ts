@@ -20,6 +20,7 @@ export type AppScreen =
   | 'ARCADE_SOCCER'
   | 'ARCADE_STICKMAN'
   | 'ARCADE_BALANCE'
+  | 'ARCADE_KHLAWIS'
   | 'FOOTBALL_HUB'
   | 'FOOTBALL_SPY'
   | 'FOOTBALL_CHAIN'
@@ -59,9 +60,26 @@ export type ArcadeGameId =
   | 'chicken'
   | 'soccer'
   | 'stickman'
-  | 'balance';
+  | 'balance'
+  | 'khlawis';
 
-export type BannerColor = 'pink' | 'blue' | 'coral' | 'green' | 'orange' | 'plum';
+export type BannerColor =
+  | 'pink'
+  | 'blue'
+  | 'coral'
+  | 'green'
+  | 'orange'
+  | 'plum'
+  | 'crimson'
+  | 'indigo'
+  | 'cyan'
+  | 'lime'
+  | 'amber'
+  | 'rose'
+  | 'sky'
+  | 'violet'
+  | 'emerald'
+  | 'fuchsia';
 
 export interface Player {
   id: string;

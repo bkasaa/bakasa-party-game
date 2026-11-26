@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, Check, Copy, Trophy } from 'lucide-react';
+import { Camera, Check, Trophy } from 'lucide-react';
 import { BANNER_COLOR_CLASSES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { Player, RoundDelta } from '../types/game';
-import { computePartyTitles, copyTextToClipboard } from '../utils/sessionStats';
+import { computePartyTitles } from '../utils/sessionStats';
 import { getScoreboardRankMap } from '../utils/scoreboardMood';
 import { soundManager, triggerHaptic } from '../utils/soundManager';
 import { shareStoryCardImage } from '../utils/storyCardShare';
@@ -29,15 +29,8 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   isTournamentMode = false,
 }) => {
   const guard = useTapGuard(400);
-  const [copied, setCopied] = useState<boolean>(false);
   const [selectedDare, setSelectedDare] = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<'idle' | 'sharing' | 'done'>('idle');
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 2200);
-    return () => window.clearTimeout(t);
-  }, [copied]);
 
   useEffect(() => {
     if (storyStatus !== 'done') return;
@@ -69,28 +62,6 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
   const loserNames = hasDistinctLoser
     ? sortedPlayers.filter((p) => lastPlaceIds.has(p.id)).map((p) => p.name)
     : [];
-
-  const handleCopySummary = async () => {
-    const medals = ['🥇', '🥈', '🥉'];
-    const lines: string[] = ['🏆 *نتائج قعدة الشلة* 🏆'];
-    if (summaryHeadline) {
-      lines.push(`✨ ${summaryHeadline}`);
-    }
-    lines.push('');
-    sortedPlayers.forEach((p, idx) => {
-      const rankMark = medals[idx] ?? `${idx + 1}.`;
-      const title = playerTitles[p.id] ? ` (${playerTitles[p.id]})` : '';
-      lines.push(`${rankMark} ${p.name}: ${p.score} نقطة${title}`);
-    });
-    const ok = await copyTextToClipboard(lines.join('\n'));
-    if (ok) {
-      soundManager.play('click');
-      triggerHaptic(25);
-      setCopied(true);
-    } else {
-      soundManager.play('error');
-    }
-  };
 
   const handleShareStory = async () => {
     if (storyStatus === 'sharing') return;
@@ -211,24 +182,6 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
             <>
               <Camera className="w-4 h-4" />
               <span>{storyStatus === 'sharing' ? 'جاري تجهيز الصورة...' : 'صور النتيجة للستوري 📸'}</span>
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCopySummary}
-          className="w-full min-h-[46px] rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 text-[#1E293B] dark:text-[#F8FAFC] text-sm font-black flex items-center justify-center gap-2 transition-colors"
-        >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4 text-[#059669] dark:text-emerald-400" />
-              <span className="text-[#059669] dark:text-emerald-400">تم النسخ! ابعتها على الواتساب</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-4 h-4 text-[#F59E0B]" />
-              <span>نسخ النتيجة للمشاركة 📋</span>
             </>
           )}
         </button>

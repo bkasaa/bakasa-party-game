@@ -3,7 +3,7 @@ import { Music, Volume2, VolumeX, X } from 'lucide-react';
 import { soundManager } from '../../utils/soundManager';
 
 interface ArcadeFloatingHudProps {
-  secondsLeft: number;
+  secondsLeft?: number | null;
   stageLabel?: string;
   muted: boolean;
   onRequestExit: () => void;
@@ -38,25 +38,26 @@ export const ArcadeFloatingHud: React.FC<ArcadeFloatingHudProps> = ({
           soundManager.play('click');
           onRequestExit();
         }}
-        className="pointer-events-auto w-6 h-6 shrink-0 rounded-full bg-white/10 hover:bg-rose-500/45 text-white/85 hover:text-white flex items-center justify-center transition-colors"
+        className="pointer-events-auto h-6 px-2 shrink-0 rounded-full bg-rose-500/75 hover:bg-rose-500 text-white text-[10px] font-black flex items-center justify-center gap-0.5 transition-colors"
       >
-        <X className="w-3.5 h-3.5" />
+        <X className="w-3 h-3" />
+        <span>خروج</span>
       </button>
 
       <div className="pointer-events-none px-1 flex items-center gap-1 text-[11px] sm:text-xs font-black tabular-nums select-none min-w-0">
-        {stageLabel && (
+        {stageLabel && <span className="text-amber-300 truncate">{stageLabel}</span>}
+        {typeof secondsLeft === 'number' && (
           <>
-            <span className="text-amber-300 truncate">{stageLabel}</span>
-            <span className="text-white/30">·</span>
+            {stageLabel && <span className="text-white/30">·</span>}
+            <span
+              className={`shrink-0 ${
+                secondsLeft <= 5 ? 'text-rose-400' : 'text-emerald-300'
+              }`}
+            >
+              {secondsLeft}ث
+            </span>
           </>
         )}
-        <span
-          className={`shrink-0 ${
-            secondsLeft <= 5 ? 'text-rose-400' : 'text-emerald-300'
-          }`}
-        >
-          {secondsLeft}ث
-        </span>
       </div>
 
       <button

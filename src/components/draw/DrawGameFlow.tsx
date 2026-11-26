@@ -291,7 +291,8 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'رسمة في ١٠ ثواني'}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -758,8 +759,10 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="جولة الرسم لسه مخلصتش، لو خرجت دلوقتي تقدم الجولة الحالية هيتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { ArrowRight, Clock, Layers, Play } from 'lucide-react';
+import { ArrowRight, Clock, Home, Layers, Play } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { ARCADE_COLORS, ArcadePlayer } from '../../types/arcade';
 import { soundManager } from '../../utils/soundManager';
-import { HomeLogoBadge } from '../HomeLogoBadge';
 
 interface DurationOption {
   value: number;
@@ -25,6 +24,7 @@ interface ArcadePreGameSetupProps {
   customConfigSlot?: React.ReactNode;
   onStartSeries: (totalRounds: number, roundDurationOrLaps: number) => void;
   onBack: () => void;
+  onEditPlayers?: () => void;
 }
 
 export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
@@ -41,6 +41,7 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
   customConfigSlot,
   onStartSeries,
   onBack,
+  onEditPlayers,
 }) => {
   const guard = useTapGuard(400);
   const goHome = useGoHome();
@@ -51,8 +52,8 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
 
   return (
     <div className="min-h-[100dvh] w-full flex flex-col">
-      <header className="w-full max-w-xl mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 shrink-0">
+      <header className="w-full max-w-xl mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             type="button"
             onClick={guard(() => {
@@ -60,17 +61,31 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
               onBack();
             })}
             aria-label="رجوع"
-            className="min-w-[44px] min-h-[44px] rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 border-b-[#D5C7B2] dark:border-b-[#090F1E] flex items-center justify-center text-[#1E293B] dark:text-[#F8FAFC]"
+            className="min-h-[42px] px-2.5 sm:px-3 rounded-2xl qada-glass-pill hover:brightness-105 flex items-center gap-1 text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] whitespace-nowrap"
           >
-            <ArrowRight className="w-5 h-5" />
+            <ArrowRight className="w-4 h-4 shrink-0" />
+            <span>رجوع</span>
           </button>
-          {goHome && <HomeLogoBadge onClick={goHome} />}
+          {goHome && (
+            <button
+              type="button"
+              onClick={guard(() => {
+                soundManager.play('click');
+                goHome();
+              })}
+              aria-label="الرئيسية"
+              className="min-h-[42px] px-2.5 sm:px-3 rounded-2xl qada-glass-pill hover:brightness-105 flex items-center gap-1 text-xs sm:text-sm font-black text-[#0D9488] dark:text-[#2DD4BF] whitespace-nowrap"
+            >
+              <Home className="w-4 h-4 shrink-0" />
+              <span>الرئيسية</span>
+            </button>
+          )}
         </div>
 
-        <h1 className="text-xl sm:text-2xl font-black text-[#1E293B] dark:text-[#F8FAFC] truncate">
+        <h1 className="text-lg sm:text-2xl font-black text-[#1E293B] dark:text-[#F8FAFC] truncate">
           {title}
         </h1>
-        <div className="w-11 shrink-0" />
+        <div className="w-4 shrink-0" />
       </header>
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 py-6 flex flex-col items-center justify-center text-center">
@@ -88,22 +103,41 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
         </p>
 
         {/* Active players strip */}
-        <div className="w-full flex items-center justify-center gap-2 flex-wrap mb-5">
-          {players.map((p) => {
-            const theme = ARCADE_COLORS[p.colorId];
-            return (
-              <div
-                key={p.id}
-                className="flex items-center gap-1.5 rounded-xl bg-white dark:bg-[#1E293B] border-2 border-[#E7DEC8] dark:border-[#334155] px-3 py-1.5 text-xs font-extrabold text-[#1E293B] dark:text-[#F8FAFC] shadow-sm"
+        <div className="w-full mb-5">
+          {onEditPlayers && (
+            <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
+              <span className="text-xs font-black text-[#64748B] dark:text-[#94A3B8]">
+                اللاعبون المشاركون ({players.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  soundManager.play('click');
+                  onEditPlayers();
+                }}
+                className="text-xs font-black text-[#0D9488] dark:text-[#2DD4BF] px-2.5 py-1 rounded-xl bg-[#F0FDFA] dark:bg-teal-950/50 border border-[#99F6E4] dark:border-teal-800"
               >
-                <span
-                  style={{ backgroundColor: theme.hex }}
-                  className="w-3 h-3 rounded-full border border-white shadow-sm shrink-0"
-                />
-                <span>{p.name}</span>
-              </div>
-            );
-          })}
+                تعديل / إضافة لاعبين (٢–٢٠)
+              </button>
+            </div>
+          )}
+          <div className="w-full flex items-center justify-center gap-2 flex-wrap">
+            {players.map((p) => {
+              const theme = ARCADE_COLORS[p.colorId];
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-1.5 rounded-xl bg-white dark:bg-[#1E293B] border-2 border-[#E7DEC8] dark:border-[#334155] px-3 py-1.5 text-xs font-extrabold text-[#1E293B] dark:text-[#F8FAFC] shadow-sm"
+                >
+                  <span
+                    style={{ backgroundColor: theme.hex }}
+                    className="w-3 h-3 rounded-full border border-white shadow-sm shrink-0"
+                  />
+                  <span>{p.name}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Series Rounds & Duration Setup Card */}

@@ -54,12 +54,12 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
 
         {showIOSGuide && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/65 backdrop-blur-sm p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/65 backdrop-blur-sm p-4 animate-modal-backdrop"
             role="dialog"
             aria-modal="true"
             aria-labelledby="ios-install-title"
           >
-            <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#1E293B] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-[6px] border-b-[#D5C7B2] dark:border-b-[#0B1120] p-6 shadow-2xl text-right">
+            <div className="w-full max-w-sm rounded-3xl qada-glass-modal p-6 text-right">
               <div className="w-12 h-12 mb-3 rounded-2xl bg-[#ECFEFF] dark:bg-teal-950/60 border-2 border-[#A5F3FC] dark:border-teal-800 flex items-center justify-center text-[#0D9488] dark:text-[#2DD4BF]">
                 <Share className="w-6 h-6" />
               </div>
@@ -76,7 +76,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
               <button
                 type="button"
                 onClick={() => {
-                  soundManager.play('click');
+                  soundManager.play('whoosh');
                   setShowIOSGuide(false);
                 }}
                 className="w-full min-h-[48px] rounded-2xl bakasa-btn-green text-white font-black text-base"

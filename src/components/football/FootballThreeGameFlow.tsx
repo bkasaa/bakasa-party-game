@@ -199,7 +199,8 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'تحدي الـ ٣ في الكورة 🔥'}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -420,8 +421,10 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="التحدي لسه شغال، لو خرجت دلوقتي نقاط الجولة دي مش هتتحسب."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

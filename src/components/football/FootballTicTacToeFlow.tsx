@@ -6,9 +6,11 @@ import {
   ValidatedTicTacToeGrid,
 } from '../../data/footballExpandedData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player, RoundDelta } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { ActiveTurnBanner } from '../ActiveTurnBanner';
+import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { TopBar } from '../TopBar';
 import { FootballSettingsBar } from './FootballSettingsBar';
@@ -70,6 +72,10 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
   const [winnerMark, setWinnerMark] = useState<Mark | 'DRAW' | null>(null);
   const [deltasMap, setDeltasMap] = useState<Record<string, number>>({});
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+
+  const isRoundInProgress = phase !== 'READY' && phase !== 'LEADERBOARD';
+  useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
 
   const playerX = players[playerXIdx] ?? players[0];
   const playerO = players[playerOIdx] ?? players[1] ?? players[0];
@@ -191,9 +197,12 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title="إكس أو الكورة ⚽"
-        exitVariant="back"
-        exitLabel="رجوع"
-        onExit={onExitToHub}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
+        onExit={() => {
+          if (isRoundInProgress) setShowExitConfirm(true);
+          else onExitToHub();
+        }}
       />
 
       <main className="flex-1 w-full max-w-md mx-auto px-3.5 pb-10 pt-2 flex flex-col items-center">
@@ -517,6 +526,19 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
           />
         )}
       </main>
+
+      <ConfirmModal
+        open={showExitConfirm}
+        title="متأكد إنك عايز تخرج من اللعبة؟"
+        message="الماتش شغال دلوقتي، لو خرجت الجولة الحالية هتتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
+        onConfirm={() => {
+          setShowExitConfirm(false);
+          onExitToHub();
+        }}
+        onCancel={() => setShowExitConfirm(false)}
+      />
     </div>
   );
 };

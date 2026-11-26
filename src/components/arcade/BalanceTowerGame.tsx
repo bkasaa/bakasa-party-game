@@ -1,170 +1,80 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowDownCircle,
-  ArrowRight,
-  Check,
-  Play,
-  Sparkles,
-  Users,
-  Volume2,
-  VolumeX,
-} from 'lucide-react';
+import Matter from 'matter-js';
+import { ArrowLeft, Layers, RotateCw } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
-import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useArcadeTouchLock } from '../../hooks/useArcadeTouchLock';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import {
   ARCADE_COLORS,
+  ArcadeDelta,
   ArcadePlayer,
   TURN_ARCADE_COLOR_ORDER,
 } from '../../types/arcade';
 import { Player, RoundDelta } from '../../types/game';
+import { recordArcadeWin } from '../../utils/sessionStats';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
-import { ActiveTurnBanner } from '../ActiveTurnBanner';
 import { ConfirmModal } from '../ConfirmModal';
 import { HomeLogoBadge } from '../HomeLogoBadge';
 import { LeaderboardScreen } from '../LeaderboardScreen';
+import { ArcadeFloatingHud } from './ArcadeFloatingHud';
+import { ArcadeLeaderboardScreen } from './ArcadeLeaderboardScreen';
+import { ArcadePreGameSetup } from './ArcadePreGameSetup';
+import { ArcadeSeriesOverlay } from './ArcadeSeriesOverlay';
 import { ArcadeWinnerSpotlight } from './ArcadeWinnerSpotlight';
 
 interface BalanceTowerGameProps {
-  players: Player[];
-  onApplyDeltas: (deltas: RoundDelta[]) => void;
+  players: Array<Player | ArcadePlayer>;
+  onApplyDeltas: (deltas: ArcadeDelta[]) => void;
   onExitToArcadeHub: () => void;
   onTournamentFinish?: (deltas: RoundDelta[]) => void;
+  onEditPlayers?: () => void;
 }
 
-type BalancePhase = 'SETUP' | 'PLAYING' | 'WINNER_SPOTLIGHT' | 'LEADERBOARD';
-type StabilityLevel = 'calm' | 'medium' | 'wild';
-type AnimalKind = 'elephant' | 'bear' | 'panda' | 'cat' | 'penguin' | 'frog';
+type MatchPhase =
+  | 'SETUP'
+  | 'PLAYING'
+  | 'INTER_ROUND'
+  | 'WINNER_SPOTLIGHT'
+  | 'LEADERBOARD';
 
-interface AnimalSpec {
-  kind: AnimalKind;
-  name: string;
-  emoji: string;
+type TurnStage = 'AIMING' | 'SETTLING' | 'COLLAPSED';
+
+type AnimalSpeciesId =
+  | 'lion'
+  | 'giraffe'
+  | 'elephant'
+  | 'bear'
+  | 'rhino'
+  | 'fox'
+  | 'cat'
+  | 'eagle';
+
+interface ColliderPartRect {
+  x: number;
+  y: number;
   w: number;
   h: number;
-  baseHalfW: number;
-  mass: number;
-  roundness: number; // 0 = wide flat base, 1 = roly-poly rolling shape
-  topHeavy: number;  // 0 = low center of gravity, 1 = tall narrow tips easily
-  color: string;
-  accent: string;
 }
 
-const ANIMALS: AnimalSpec[] = [
-  {
-    kind: 'elephant',
-    name: 'فيل',
-    emoji: '🐘',
-    w: 72,
-    h: 50,
-    baseHalfW: 31,
-    mass: 1.65,
-    roundness: 0.08,
-    topHeavy: 0.12,
-    color: '#60A5FA',
-    accent: '#1D4ED8',
-  },
-  {
-    kind: 'bear',
-    name: 'دبدوب',
-    emoji: '🐻',
-    w: 58,
-    h: 50,
-    baseHalfW: 20,
-    mass: 1.32,
-    roundness: 0.72,
-    topHeavy: 0.3,
-    color: '#D97706',
-    accent: '#92400E',
-  },
-  {
-    kind: 'panda',
-    name: 'باندا',
-    emoji: '🐼',
-    w: 56,
-    h: 48,
-    baseHalfW: 19,
-    mass: 1.22,
-    roundness: 0.88,
-    topHeavy: 0.34,
-    color: '#F8FAFC',
-    accent: '#0F172A',
-  },
-  {
-    kind: 'penguin',
-    name: 'بطريق',
-    emoji: '🐧',
-    w: 42,
-    h: 54,
-    baseHalfW: 14,
-    mass: 0.9,
-    roundness: 0.25,
-    topHeavy: 0.9,
-    color: '#334155',
-    accent: '#F59E0B',
-  },
-  {
-    kind: 'cat',
-    name: 'قطة',
-    emoji: '🐱',
-    w: 46,
-    h: 50,
-    baseHalfW: 15,
-    mass: 0.84,
-    roundness: 0.22,
-    topHeavy: 0.8,
-    color: '#FB923C',
-    accent: '#C2410C',
-  },
-  {
-    kind: 'frog',
-    name: 'ضفدع',
-    emoji: '🐸',
-    w: 54,
-    h: 36,
-    baseHalfW: 23,
-    mass: 0.78,
-    roundness: 0.32,
-    topHeavy: 0.08,
-    color: '#22C55E',
-    accent: '#15803D',
-  },
-];
+interface AnimalSpec {
+  id: AnimalSpeciesId;
+  name: string;
+  emoji: string;
+  parts: ColliderPartRect[];
+  density: number;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  comOffset: { x: number; y: number };
+}
 
-const STABILITY_CONFIG: Record<
-  StabilityLevel,
-  { label: string; maxAngle: number; springK: number; torqueScale: number }
-> = {
-  calm: { label: 'هادي', maxAngle: 0.56, springK: 16.0, torqueScale: 0.0082 },
-  medium: { label: 'متوسط', maxAngle: 0.44, springK: 11.8, torqueScale: 0.0112 },
-  wild: { label: 'مجنون 🔥', maxAngle: 0.34, springK: 8.8, torqueScale: 0.0148 },
-};
-
-const WORLD_W = 460;
-const WORLD_H = 740;
-const BEAM_Y = 615;
-const BEAM_W = 248;
-const BEAM_H = 18;
-const WATER_Y = 692;
-const CRANE_HOVER_Y = 66;
-const CRANE_MARGIN_X = 96;
-
-interface StackedBlock {
-  id: number;
-  supportId: number | null;
+interface PlacedBodyMeta {
   spec: AnimalSpec;
-  localX: number; // offset from beam center along beam
-  localY: number; // height above beam top (positive up)
-  localRot: number;
-  rotVel: number;
-  vy: number;
-  vx: number;
-  fallingOff: boolean;
-  worldX: number;
-  worldY: number;
-  rot: number;
-  ownerColor: string;
+  playerIdx: number;
+  playerHex: string;
+  playerName: string;
+  droppedAt: number;
+  highestY: number;
 }
 
 interface SplashParticle {
@@ -172,347 +82,437 @@ interface SplashParticle {
   y: number;
   vx: number;
   vy: number;
-  r: number;
-  life: number;
   color: string;
+  size: number;
+  life: number;
 }
 
-function drawAnimalBody(
+interface FloatingBanner {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+}
+
+const WORLD_W = 420;
+const PLATFORM_X = WORLD_W / 2;
+const PLATFORM_Y = 530;
+// ~82% of mobile screen width, leaving ~9% water drop-off gap on left and right edges
+const PLATFORM_W = Math.round(WORLD_W * 0.82);
+const PLATFORM_H = 30;
+const WATER_Y = PLATFORM_Y + 115;
+const DROP_CLEARANCE = 310;
+const MIN_AIM_X = 34;
+const MAX_AIM_X = WORLD_W - 34;
+
+function getStageMetrics(vw: number, vh: number) {
+  // Portrait fullscreen optimization: full mobile width on phones, vertical portrait pillar on wide viewports
+  const portraitW = Math.min(vw, vh * 0.62);
+  const scale = Math.max(0.58, portraitW / WORLD_W);
+  const offsetX = (vw - WORLD_W * scale) / 2;
+  const baseGroundScreenY = vh - 108;
+  const topSpawnScreenY = Math.min(176, Math.max(132, vh * 0.21));
+  const initialHoverY = PLATFORM_Y - (baseGroundScreenY - topSpawnScreenY) / scale;
+  return { scale, offsetX, baseGroundScreenY, topSpawnScreenY, initialHoverY };
+}
+
+function computeComOffset(parts: ColliderPartRect[]): { x: number; y: number } {
+  const bodies = parts.map((p) => Matter.Bodies.rectangle(p.x, p.y, p.w, p.h));
+  const temp = Matter.Body.create({ parts: bodies });
+  return { x: temp.position.x, y: temp.position.y };
+}
+
+const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
+  {
+    id: 'lion',
+    name: 'أسد',
+    emoji: '🦁',
+    density: 0.0024,
+    primaryColor: '#F59E0B',
+    secondaryColor: '#B45309',
+    accentColor: '#FDE68A',
+    parts: [
+      { x: 0, y: -2, w: 66, h: 28 }, // torso
+      { x: 26, y: -14, w: 30, h: 30 }, // mane + head
+      { x: -22, y: 18, w: 14, h: 16 }, // back leg
+      { x: 20, y: 18, w: 14, h: 16 }, // front leg
+    ],
+  },
+  {
+    id: 'giraffe',
+    name: 'زرافة',
+    emoji: '🦒',
+    density: 0.0021,
+    primaryColor: '#FBBF24',
+    secondaryColor: '#92400E',
+    accentColor: '#FEF3C7',
+    parts: [
+      { x: -6, y: 8, w: 50, h: 24 }, // torso
+      { x: 14, y: -22, w: 15, h: 48 }, // long neck
+      { x: 20, y: -44, w: 24, h: 16 }, // head + snout
+      { x: -22, y: 27, w: 12, h: 18 }, // back leg
+      { x: 10, y: 27, w: 12, h: 18 }, // front leg
+    ],
+  },
+  {
+    id: 'elephant',
+    name: 'فيل',
+    emoji: '🐘',
+    density: 0.0032,
+    primaryColor: '#94A3B8',
+    secondaryColor: '#64748B',
+    accentColor: '#CBD5E1',
+    parts: [
+      { x: -4, y: -4, w: 74, h: 38 }, // heavy torso + head
+      { x: 35, y: 4, w: 14, h: 28 }, // trunk
+      { x: -26, y: 22, w: 18, h: 18 }, // back leg
+      { x: 16, y: 22, w: 18, h: 18 }, // front leg
+    ],
+  },
+  {
+    id: 'bear',
+    name: 'دبدوب',
+    emoji: '🐻',
+    density: 0.0026,
+    primaryColor: '#92400E',
+    secondaryColor: '#78350F',
+    accentColor: '#FDE68A',
+    parts: [
+      { x: 0, y: 0, w: 58, h: 32 }, // chunky torso
+      { x: 22, y: -15, w: 26, h: 24 }, // head
+      { x: -18, y: 21, w: 16, h: 14 }, // back paw
+      { x: 18, y: 21, w: 16, h: 14 }, // front paw
+    ],
+  },
+  {
+    id: 'rhino',
+    name: 'وحيد القرن',
+    emoji: '🦏',
+    density: 0.003,
+    primaryColor: '#64748B',
+    secondaryColor: '#475569',
+    accentColor: '#E2E8F0',
+    parts: [
+      { x: -4, y: 0, w: 68, h: 30 }, // armored body
+      { x: 30, y: -4, w: 22, h: 22 }, // head
+      { x: 38, y: -18, w: 10, h: 14 }, // horn
+      { x: -24, y: 20, w: 15, h: 14 }, // back leg
+      { x: 14, y: 20, w: 15, h: 14 }, // front leg
+    ],
+  },
+  {
+    id: 'fox',
+    name: 'ثعلب',
+    emoji: '🦊',
+    density: 0.002,
+    primaryColor: '#EA580C',
+    secondaryColor: '#9A3412',
+    accentColor: '#FFFBEB',
+    parts: [
+      { x: 0, y: 2, w: 56, h: 22 }, // sleek torso
+      { x: -30, y: -4, w: 18, h: 16 }, // bushy tail
+      { x: 24, y: -10, w: 22, h: 20 }, // head
+      { x: -16, y: 18, w: 11, h: 14 }, // back leg
+      { x: 16, y: 18, w: 11, h: 14 }, // front leg
+    ],
+  },
+  {
+    id: 'cat',
+    name: 'قطة',
+    emoji: '🐱',
+    density: 0.0019,
+    primaryColor: '#FB923C',
+    secondaryColor: '#EA580C',
+    accentColor: '#FEF3C7',
+    parts: [
+      { x: 0, y: 4, w: 48, h: 22 }, // body
+      { x: 20, y: -10, w: 22, h: 20 }, // head
+      { x: -25, y: -8, w: 10, h: 22 }, // upright tail
+      { x: -14, y: 19, w: 10, h: 12 }, // back leg
+      { x: 14, y: 19, w: 10, h: 12 }, // front leg
+    ],
+  },
+  {
+    id: 'eagle',
+    name: 'نسر',
+    emoji: '🦅',
+    density: 0.0021,
+    primaryColor: '#78350F',
+    secondaryColor: '#451A03',
+    accentColor: '#FACC15',
+    parts: [
+      { x: 0, y: 0, w: 32, h: 32 }, // body
+      { x: -26, y: -6, w: 24, h: 14 }, // left wing
+      { x: 26, y: -6, w: 24, h: 14 }, // right wing
+      { x: 0, y: -18, w: 20, h: 18 }, // white head + beak
+    ],
+  },
+];
+
+const ANIMAL_SPECS: AnimalSpec[] = RAW_ANIMAL_SPECS.map((spec) => ({
+  ...spec,
+  comOffset: computeComOffset(spec.parts),
+}));
+
+function pickRandomAnimal(): AnimalSpec {
+  return ANIMAL_SPECS[Math.floor(Math.random() * ANIMAL_SPECS.length)];
+}
+
+function createAnimalBody(spec: AnimalSpec, x: number, y: number, angleRad: number): Matter.Body {
+  const parts = spec.parts.map((r) =>
+    Matter.Bodies.rectangle(r.x, r.y, r.w, r.h, {
+      chamfer: { radius: 4 },
+      friction: 0.9,
+      frictionStatic: 1.0,
+      restitution: 0.04,
+      density: spec.density,
+    })
+  );
+
+  const body = Matter.Body.create({
+    parts,
+    friction: 0.9,
+    frictionStatic: 1.0,
+    restitution: 0.04,
+    frictionAir: 0.012,
+  });
+
+  Matter.Body.setPosition(body, { x, y });
+  Matter.Body.setAngle(body, angleRad);
+  return body;
+}
+
+function drawRoundedRect(
   ctx: CanvasRenderingContext2D,
-  spec: AnimalSpec,
   x: number,
   y: number,
-  rot: number,
-  ringColor?: string
+  w: number,
+  h: number,
+  r: number
+) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  ctx.lineTo(x + rr, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+  ctx.lineTo(x, y + rr);
+  ctx.quadraticCurveTo(x, y, x + rr, y);
+  ctx.closePath();
+}
+
+function drawAnimalSilhouette(
+  ctx: CanvasRenderingContext2D,
+  spec: AnimalSpec,
+  playerHex: string,
+  x: number,
+  y: number,
+  angle: number,
+  alpha = 1,
+  isGhost = false
 ) {
   ctx.save();
+  ctx.globalAlpha = alpha;
   ctx.translate(x, y);
-  ctx.rotate(rot);
+  ctx.rotate(angle);
+  ctx.translate(-spec.comOffset.x, -spec.comOffset.y);
 
-  const hw = spec.w / 2;
-  const hh = spec.h / 2;
-  const outline = '#0F172A';
-
-  ctx.lineJoin = 'round';
-  ctx.lineCap = 'round';
-
-  if (spec.kind === 'elephant') {
-    // Elephant: wide sturdy legs, rounded domed back, floppy ears, curved trunk
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
-    ctx.beginPath();
-    ctx.ellipse(0, hh - 2, hw * 0.88, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Ears behind head
-    ctx.fillStyle = '#93C5FD';
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2.8;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(side * (hw * 0.72), -4, 11, 15, side * 0.22, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Main sculpted silhouette (flat feet + domed back)
-    ctx.fillStyle = spec.color;
-    ctx.beginPath();
-    ctx.moveTo(-hw * 0.76, hh);
-    ctx.lineTo(-hw * 0.42, hh);
-    ctx.lineTo(-hw * 0.36, hh - 9);
-    ctx.lineTo(hw * 0.36, hh - 9);
-    ctx.lineTo(hw * 0.42, hh);
-    ctx.lineTo(hw * 0.76, hh);
-    ctx.quadraticCurveTo(hw * 0.88, 0, hw * 0.52, -hh + 4);
-    ctx.quadraticCurveTo(0, -hh - 4, -hw * 0.52, -hh + 4);
-    ctx.quadraticCurveTo(-hw * 0.88, 0, -hw * 0.76, hh);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Curved trunk
-    ctx.fillStyle = '#3B82F6';
-    ctx.beginPath();
-    ctx.moveTo(-5, -2);
-    ctx.quadraticCurveTo(-8, 15, 4, 18);
-    ctx.quadraticCurveTo(10, 18, 9, 13);
-    ctx.quadraticCurveTo(3, 12, 5, -2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Tusks
-    ctx.fillStyle = '#FFFBEB';
-    ctx.beginPath();
-    ctx.moveTo(-12, 3);
-    ctx.quadraticCurveTo(-17, 10, -10, 11);
-    ctx.moveTo(12, 3);
-    ctx.quadraticCurveTo(17, 10, 10, 11);
-    ctx.fill();
-
-    // Eyes
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(-11, -7, 4.2, 0, Math.PI * 2);
-    ctx.arc(11, -7, 4.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = outline;
-    ctx.beginPath();
-    ctx.arc(-11, -7, 2.2, 0, Math.PI * 2);
-    ctx.arc(11, -7, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (spec.kind === 'bear' || spec.kind === 'panda') {
-    // Roly-poly rounded silhouette (tips/rolls visibly!)
-    const isPanda = spec.kind === 'panda';
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';
-    ctx.beginPath();
-    ctx.ellipse(0, hh - 2, hw * 0.65, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Round ears
-    ctx.fillStyle = isPanda ? '#0F172A' : '#92400E';
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2.8;
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(side * (hw * 0.56), -hh + 5, 8.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Plump oval body
-    ctx.fillStyle = spec.color;
-    ctx.beginPath();
-    ctx.ellipse(0, 1, hw * 0.88, hh * 0.92, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    if (isPanda) {
-      // Panda dark belly band + eye patches
-      ctx.fillStyle = '#1E293B';
-      ctx.beginPath();
-      ctx.ellipse(-10, -5, 6.5, 5.2, -0.3, 0, Math.PI * 2);
-      ctx.ellipse(10, -5, 6.5, 5.2, 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(0, 12, hw * 0.68, 7, 0, 0, Math.PI);
-      ctx.fill();
-    } else {
-      // Bear tan belly & muzzle
-      ctx.fillStyle = '#FDE68A';
-      ctx.beginPath();
-      ctx.ellipse(0, 10, hw * 0.48, hh * 0.38, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 9, 6.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Eyes & nose
-    ctx.fillStyle = isPanda ? '#FFFFFF' : '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(-10, -5, 3.6, 0, Math.PI * 2);
-    ctx.arc(10, -5, 3.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = outline;
-    ctx.beginPath();
-    ctx.arc(-10, -5, 1.9, 0, Math.PI * 2);
-    ctx.arc(10, -5, 1.9, 0, Math.PI * 2);
-    ctx.arc(0, -1, 3, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (spec.kind === 'penguin') {
-    // Tall narrow tapered egg silhouette (top-heavy stance)
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
-    ctx.beginPath();
-    ctx.ellipse(0, hh - 1, hw * 0.72, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Orange feet
-    ctx.fillStyle = '#F59E0B';
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.ellipse(-7, hh - 2, 6.5, 3.5, 0, 0, Math.PI * 2);
-    ctx.ellipse(7, hh - 2, 6.5, 3.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Flippers
-    ctx.fillStyle = '#1E293B';
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(side * (hw * 0.85), 3, 5.5, 14, side * 0.28, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Tapered pear body
-    ctx.fillStyle = spec.color;
-    ctx.beginPath();
-    ctx.moveTo(0, -hh);
-    ctx.bezierCurveTo(hw * 0.82, -hh, hw * 0.92, 6, hw * 0.65, hh - 4);
-    ctx.quadraticCurveTo(0, hh, -hw * 0.65, hh - 4);
-    ctx.bezierCurveTo(-hw * 0.92, 6, -hw * 0.82, -hh, 0, -hh);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // White belly
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.ellipse(0, 7, hw * 0.56, hh * 0.56, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eyes & orange beak
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(-6.5, -11, 3.8, 0, Math.PI * 2);
-    ctx.arc(6.5, -11, 3.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = outline;
-    ctx.beginPath();
-    ctx.arc(-6.5, -11, 2, 0, Math.PI * 2);
-    ctx.arc(6.5, -11, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#F59E0B';
-    ctx.beginPath();
-    ctx.moveTo(-5, -6);
-    ctx.lineTo(5, -6);
-    ctx.lineTo(0, 1);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  } else if (spec.kind === 'cat') {
-    // Tall slim cat silhouette with pointed ears & curled tail
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.15)';
-    ctx.beginPath();
-    ctx.ellipse(0, hh - 2, hw * 0.72, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Curled tail
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 7;
-    ctx.beginPath();
-    ctx.moveTo(hw * 0.5, hh - 8);
-    ctx.quadraticCurveTo(hw + 9, hh - 18, hw + 4, 0);
-    ctx.stroke();
-    ctx.strokeStyle = spec.color;
-    ctx.lineWidth = 3.5;
-    ctx.stroke();
-
-    // Pointy ears + oval upright body
-    ctx.fillStyle = spec.color;
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2.8;
-    ctx.beginPath();
-    ctx.moveTo(-hw * 0.55, -hh + 10);
-    ctx.lineTo(-hw * 0.42, -hh - 5);
-    ctx.lineTo(-4, -hh + 5);
-    ctx.quadraticCurveTo(0, -hh + 3, 4, -hh + 5);
-    ctx.lineTo(hw * 0.42, -hh - 5);
-    ctx.lineTo(hw * 0.55, -hh + 10);
-    ctx.quadraticCurveTo(hw * 0.85, 6, hw * 0.62, hh - 2);
-    ctx.lineTo(-hw * 0.62, hh - 2);
-    ctx.quadraticCurveTo(-hw * 0.85, 6, -hw * 0.55, -hh + 10);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Inner belly patch
-    ctx.fillStyle = '#FFEDD5';
-    ctx.beginPath();
-    ctx.ellipse(0, 9, hw * 0.42, hh * 0.36, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eyes + whiskers
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(-7, -8, 3.8, 0, Math.PI * 2);
-    ctx.arc(7, -8, 3.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = outline;
-    ctx.beginPath();
-    ctx.arc(-7, -8, 2, 0, Math.PI * 2);
-    ctx.arc(7, -8, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(-11, -3);
-    ctx.lineTo(-19, -5);
-    ctx.moveTo(-11, 0);
-    ctx.lineTo(-19, 1);
-    ctx.moveTo(11, -3);
-    ctx.lineTo(19, -5);
-    ctx.moveTo(11, 0);
-    ctx.lineTo(19, 1);
-    ctx.stroke();
-  } else {
-    // Frog: wide squat curved amphibian body + big eye domes + tucked hind legs
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
-    ctx.beginPath();
-    ctx.ellipse(0, hh - 1, hw * 0.9, 4.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = spec.color;
-    ctx.strokeStyle = outline;
-    ctx.lineWidth = 2.8;
-
-    // Tucked hind legs
-    for (const side of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(side * (hw * 0.72), hh - 7, 9, 7, side * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Wide low oval torso
-    ctx.beginPath();
-    ctx.ellipse(0, 3, hw * 0.82, hh * 0.72, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Lighter throat/belly
-    ctx.fillStyle = '#BBF7D0';
-    ctx.beginPath();
-    ctx.ellipse(0, 6, hw * 0.55, hh * 0.42, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Eye domes on top
-    ctx.fillStyle = spec.color;
-    ctx.beginPath();
-    ctx.arc(-11, -hh + 4, 7.2, 0, Math.PI * 2);
-    ctx.arc(11, -hh + 4, 7.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(-11, -hh + 4, 4.4, 0, Math.PI * 2);
-    ctx.arc(11, -hh + 4, 4.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = outline;
-    ctx.beginPath();
-    ctx.arc(-11, -hh + 4, 2.2, 0, Math.PI * 2);
-    ctx.arc(11, -hh + 4, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = '#14532D';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 1, 8, 0.2, Math.PI - 0.2);
-    ctx.stroke();
+  // Subtle player tint aura on non-ghost animals
+  if (!isGhost) {
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.25)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
   }
 
-  // Player-colored collar/badge dot at bottom chest so ownership stays unmistakable
-  if (ringColor) {
-    ctx.fillStyle = ringColor;
+  // Draw compound body parts with rich outlines & dual-tone detailing
+  spec.parts.forEach((p, idx) => {
+    const rx = p.x - p.w / 2;
+    const ry = p.y - p.h / 2;
+    drawRoundedRect(ctx, rx, ry, p.w, p.h, 6);
+    ctx.fillStyle = idx % 2 === 0 ? spec.primaryColor : spec.secondaryColor;
+    ctx.fill();
+    ctx.lineWidth = isGhost ? 2 : 2.5;
+    ctx.strokeStyle = isGhost ? playerHex : '#1E293B';
+    ctx.stroke();
+
+    // Specular highlight strip on upper half of torso/head
+    if (!isGhost && idx <= 1) {
+      drawRoundedRect(ctx, rx + 3, ry + 2.5, Math.max(4, p.w - 6), Math.max(3, p.h * 0.28), 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fill();
+    }
+  });
+
+  ctx.shadowColor = 'transparent';
+
+  // Characteristic details per animal species
+  if (spec.id === 'lion') {
+    // Fluffy mane ring + face
+    ctx.fillStyle = '#92400E';
+    ctx.beginPath();
+    ctx.arc(26, -14, 17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.arc(27, -14, 11.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eyes & nose
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(31, -16, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#78350F';
+    ctx.beginPath();
+    ctx.arc(36, -12, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'giraffe') {
+    // Giraffe spots
+    ctx.fillStyle = spec.secondaryColor;
+    [
+      [-14, 4, 4.5],
+      [2, 10, 4],
+      [14, -14, 3.5],
+      [14, -28, 3],
+    ].forEach(([sx, sy, sr]) => {
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // Ossicones + eye
+    ctx.strokeStyle = '#78350F';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(16, -52);
+    ctx.lineTo(14, -60);
+    ctx.moveTo(22, -52);
+    ctx.lineTo(24, -60);
+    ctx.stroke();
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(24, -46, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'elephant') {
+    // Large floppy ear + ivory tusk + eye
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.ellipse(12, -4, 11, 14, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#FFFBEB';
+    ctx.beginPath();
+    ctx.moveTo(30, 8);
+    ctx.quadraticCurveTo(44, 12, 46, 2);
+    ctx.quadraticCurveTo(38, 6, 30, 4);
+    ctx.fill();
+
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(25, -10, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'bear') {
+    // Bear round ears & muzzle
+    ctx.fillStyle = spec.secondaryColor;
+    ctx.beginPath();
+    ctx.arc(15, -26, 6, 0, Math.PI * 2);
+    ctx.arc(29, -26, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.ellipse(29, -12, 7, 5.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(32, -13, 2.2, 0, Math.PI * 2);
+    ctx.arc(24, -18, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'rhino') {
+    // Eye + ear
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(31, -7, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.moveTo(34, -13);
+    ctx.lineTo(42, -28);
+    ctx.lineTo(42, -11);
+    ctx.closePath();
+    ctx.fill();
+  } else if (spec.id === 'fox') {
+    // White tail tip + pointy ear + eye
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.arc(-36, -6, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(17, -19);
+    ctx.lineTo(22, -31);
+    ctx.lineTo(28, -19);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(28, -11, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'cat') {
+    // Pointy cat ears & whiskers
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(12, -19);
+    ctx.lineTo(15, -30);
+    ctx.lineTo(21, -19);
+    ctx.moveTo(22, -19);
+    ctx.lineTo(27, -30);
+    ctx.lineTo(30, -19);
+    ctx.fill();
+    ctx.fillStyle = '#10B981';
+    ctx.beginPath();
+    ctx.arc(24, -11, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (spec.id === 'eagle') {
+    // White eagle head + yellow beak + eye
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, -18, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.moveTo(8, -19);
+    ctx.lineTo(18, -16);
+    ctx.lineTo(8, -12);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(3, -19, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Player color badge dot
+  if (!isGhost) {
+    ctx.fillStyle = playerHex;
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(0, hh - 7, 5, 0, Math.PI * 2);
+    ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -521,1063 +521,958 @@ function drawAnimalBody(
 }
 
 export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
-  players,
+  players: rawPlayers,
   onApplyDeltas,
   onExitToArcadeHub,
   onTournamentFinish,
+  onEditPlayers,
 }) => {
-  const guard = useTapGuard(350);
-  const goHome = useGoHome();
-  const arenaRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  const [phase, setPhase] = useState<BalancePhase>('SETUP');
-  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
-    players.slice(0, Math.min(6, players.length)).map((p) => p.id)
+  const players = useMemo<ArcadePlayer[]>(
+    () =>
+      rawPlayers.map((p, idx) => ({
+        id: p.id,
+        name: p.name,
+        score: p.score,
+        colorId:
+          'colorId' in p && p.colorId
+            ? p.colorId
+            : TURN_ARCADE_COLOR_ORDER[idx % TURN_ARCADE_COLOR_ORDER.length],
+      })),
+    [rawPlayers]
   );
-  const [stability, setStability] = useState<StabilityLevel>('medium');
-  const [muted, setMuted] = useState<boolean>(() => soundManager.isMuted());
+
+  const [phase, setPhase] = useState<MatchPhase>('SETUP');
+  const [totalRounds, setTotalRounds] = useState<number>(3);
+  const [roundNum, setRoundNum] = useState<number>(1);
+  const [seriesScores, setSeriesScores] = useState<Record<string, number>>({});
+  const [roundDeltas, setRoundDeltas] = useState<ArcadeDelta[]>([]);
+  const [finalSeriesDeltas, setFinalSeriesDeltas] = useState<ArcadeDelta[]>([]);
+  const [seriesWinners, setSeriesWinners] = useState<ArcadePlayer[]>([]);
+  const [summaryText, setSummaryText] = useState<string>('');
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
+  const [muted, setMuted] = useState<boolean>(() => soundManager.isMuted());
 
-  // Live HUD state
-  const [activePlayerIdx, setActivePlayerIdx] = useState<number>(0);
-  const [eliminatedIds, setEliminatedIds] = useState<string[]>([]);
-  const [currentAnimal, setCurrentAnimal] = useState<AnimalSpec>(ANIMALS[0]);
-  const [stackedCount, setStackedCount] = useState<number>(0);
-  const [statusBanner, setStatusBanner] = useState<string | null>(null);
-  const [isDropping, setIsDropping] = useState<boolean>(false);
-  const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
-  const [winnerPlayers, setWinnerPlayers] = useState<Player[]>([]);
-  const [joyKnob, setJoyKnob] = useState<{ x: number; y: number; active: boolean }>({
-    x: 0,
-    y: 0,
-    active: false,
-  });
+  const [turnIdx, setTurnIdx] = useState<number>(0);
+  const [turnStage, setTurnStage] = useState<TurnStage>('AIMING');
+  const [currentAnimal, setCurrentAnimal] = useState<AnimalSpec>(() => pickRandomAnimal());
+  const [towerHeightM, setTowerHeightM] = useState<number>(0);
+  const [placedCount, setPlacedCount] = useState<number>(0);
+  const [eliminatedSet, setEliminatedSet] = useState<Record<number, boolean>>({});
+  const [roundPointsMap, setRoundPointsMap] = useState<Record<string, number>>({});
 
-  useArcadeTouchLock(phase === 'PLAYING', arenaRef);
-  useNavigationGuard(phase === 'PLAYING', () => setShowExitConfirm(true));
+  const arenaRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const viewSizeRef = useRef<{ w: number; h: number }>({ w: 420, h: 720 });
+
+  // Matter.js refs
+  const engineRef = useRef<Matter.Engine | null>(null);
+  const metaMapRef = useRef<Map<number, PlacedBodyMeta>>(new Map());
+
+  // Interactive aiming / camera refs
+  const aimXRef = useRef<number>(PLATFORM_X);
+  const aimAngleRef = useRef<number>(0);
+  const holdDirRef = useRef<-1 | 0 | 1>(0);
+  const cameraYRef = useRef<number>(0);
+  const targetCameraYRef = useRef<number>(0);
+  const highestStackedYRef = useRef<number>(PLATFORM_Y - PLATFORM_H / 2);
+
+  // Turn & round synchronization refs
+  const turnIdxRef = useRef<number>(0);
+  const turnStageRef = useRef<TurnStage>('AIMING');
+  const currentAnimalRef = useRef<AnimalSpec>(currentAnimal);
+  const eliminatedRef = useRef<Record<number, boolean>>({});
+  const roundPointsRef = useRef<Record<string, number>>({});
+  const settleTimerRef = useRef<number>(0);
+  const settlingElapsedRef = useRef<number>(0);
+  const collapseTimerRef = useRef<number | null>(null);
+  const lastDropBodyIdRef = useRef<number | null>(null);
+  const roundEndedRef = useRef<boolean>(false);
+
+  // VFX
+  const splashesRef = useRef<SplashParticle[]>([]);
+  const bannersRef = useRef<FloatingBanner[]>([]);
+
+  const isRoundActive = phase === 'PLAYING';
+  useArcadeTouchLock(isRoundActive, arenaRef);
+  useNavigationGuard(isRoundActive || phase === 'INTER_ROUND', () => setShowExitConfirm(true));
+  const goHome = useGoHome();
 
   useEffect(() => {
     return soundManager.subscribe(setMuted);
   }, []);
 
-  const participatingPlayers = useMemo(() => {
-    const picked = players.filter((p) => selectedIds.includes(p.id));
-    return picked.length >= 2 ? picked : players.slice(0, 2);
-  }, [players, selectedIds]);
-
-  const participatingArcadePlayers: ArcadePlayer[] = useMemo(
-    () =>
-      participatingPlayers.map((p, idx) => ({
-        id: p.id,
-        name: p.name,
-        colorId: TURN_ARCADE_COLOR_ORDER[idx % TURN_ARCADE_COLOR_ORDER.length],
-        score: p.score,
-      })),
-    [participatingPlayers]
-  );
-
-  const colorForPlayer = useCallback(
-    (playerId: string) => {
-      const idx = participatingPlayers.findIndex((p) => p.id === playerId);
-      const cid = TURN_ARCADE_COLOR_ORDER[(idx >= 0 ? idx : 0) % TURN_ARCADE_COLOR_ORDER.length];
-      return ARCADE_COLORS[cid].hex;
-    },
-    [participatingPlayers]
-  );
-
-  // Mutable simulation state inside requestAnimationFrame
-  const simRef = useRef<{
-    blocks: StackedBlock[];
-    nextBlockId: number;
-    boardAngle: number;
-    boardAngVel: number;
-    craneX: number;
-    steerDir: number; // -1..1
-    droppingBlock: {
-      spec: AnimalSpec;
-      x: number;
-      y: number;
-      vy: number;
-      ownerColor: string;
-    } | null;
-    settlingUntil: number;
-    collapseTriggered: boolean;
-    turnIdx: number;
-    eliminated: Set<string>;
-    surviveBonuses: Record<string, number>;
-    currentSpec: AnimalSpec;
-    particles: SplashParticle[];
-    waveTime: number;
-    lastJoyHapticSign: number;
-    ended: boolean;
-  }>({
-    blocks: [],
-    nextBlockId: 1,
-    boardAngle: 0,
-    boardAngVel: 0,
-    craneX: WORLD_W / 2,
-    steerDir: 0,
-    droppingBlock: null,
-    settlingUntil: 0,
-    collapseTriggered: false,
-    turnIdx: 0,
-    eliminated: new Set(),
-    surviveBonuses: {},
-    currentSpec: ANIMALS[0],
-    particles: [],
-    waveTime: 0,
-    lastJoyHapticSign: 0,
-    ended: false,
-  });
-
-  const joyOriginRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
-
-  const pickRandomAnimal = (): AnimalSpec =>
-    ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
-
-  const findNextSurvivorIdx = (fromIdx: number, elim: Set<string>, total: number): number => {
-    for (let step = 1; step <= total; step++) {
-      const candidate = (fromIdx + step) % total;
-      if (!elim.has(participatingPlayers[candidate].id)) return candidate;
+  const disposePhysics = useCallback(() => {
+    if (collapseTimerRef.current !== null) {
+      window.clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = null;
     }
-    return fromIdx;
-  };
+    if (engineRef.current) {
+      Matter.World.clear(engineRef.current.world, false);
+      Matter.Engine.clear(engineRef.current);
+      engineRef.current = null;
+    }
+    metaMapRef.current.clear();
+    holdDirRef.current = 0;
+  }, []);
 
-  const spawnSplash = (x: number, y: number, color: string) => {
-    for (let i = 0; i < 16; i++) {
-      const ang = -Math.PI * (0.1 + Math.random() * 0.8);
-      const spd = 110 + Math.random() * 190;
-      simRef.current.particles.push({
-        x,
-        y,
-        vx: Math.cos(ang) * spd,
-        vy: Math.sin(ang) * spd,
-        r: 3 + Math.random() * 4,
-        life: 0.75 + Math.random() * 0.35,
-        color,
+  useEffect(() => {
+    return () => {
+      disposePhysics();
+    };
+  }, [disposePhysics]);
+
+  const finishRound = useCallback(
+    (survivorIndices: number[], loserIdx: number | null) => {
+      if (roundEndedRef.current) return;
+      roundEndedRef.current = true;
+      disposePhysics();
+
+      const updatedPoints: Record<string, number> = { ...roundPointsRef.current };
+      if (survivorIndices.length === 1 && players[survivorIndices[0]]) {
+        updatedPoints[players[survivorIndices[0]].id] =
+          (updatedPoints[players[survivorIndices[0]].id] ?? 0) + 60;
+      } else if (survivorIndices.length > 1) {
+        survivorIndices.forEach((sIdx) => {
+          const sp = players[sIdx];
+          if (sp) {
+            updatedPoints[sp.id] = (updatedPoints[sp.id] ?? 0) + 25;
+          }
+        });
+      }
+
+      const deltas: ArcadeDelta[] = players.map((p) => ({
+        playerId: p.id,
+        delta: Math.max(0, updatedPoints[p.id] ?? 0),
+      }));
+
+      const nextSeries: Record<string, number> = { ...seriesScores };
+      deltas.forEach((d) => {
+        nextSeries[d.playerId] = (nextSeries[d.playerId] ?? 0) + d.delta;
       });
-    }
-  };
+      setSeriesScores(nextSeries);
+      setRoundDeltas(deltas);
 
-  const startGame = guard(() => {
-    if (participatingPlayers.length < 2) {
-      soundManager.play('error');
-      return;
-    }
-    soundManager.unlock();
-    soundManager.play('next');
-    triggerHaptic(20);
+      const soleWinnerName =
+        survivorIndices.length === 1 && players[survivorIndices[0]]
+          ? players[survivorIndices[0]].name
+          : null;
+      const loserName = loserIdx !== null && players[loserIdx] ? players[loserIdx].name : null;
 
-    const firstAnimal = pickRandomAnimal();
-    const bonuses: Record<string, number> = {};
-    participatingPlayers.forEach((p) => {
-      bonuses[p.id] = 0;
+      if (roundNum >= totalRounds) {
+        const finalDeltas: ArcadeDelta[] = players.map((p) => ({
+          playerId: p.id,
+          delta: nextSeries[p.id] ?? 0,
+        }));
+        const topScore = Math.max(...finalDeltas.map((d) => d.delta));
+        const winners = players.filter((p) => (nextSeries[p.id] ?? 0) === topScore);
+        winners.forEach((w) => recordArcadeWin(w.id));
+        onApplyDeltas(finalDeltas);
+        setFinalSeriesDeltas(finalDeltas);
+        setSeriesWinners(winners);
+        setSummaryText(
+          winners.length === 1
+            ? `بطل برج التوازن: ${winners[0].name} 🦁🏆`
+            : `تعادل في برج التوازن: ${winners.map((w) => w.name).join(' و ')}!`
+        );
+        soundManager.play('victory');
+        setPhase('WINNER_SPOTLIGHT');
+      } else {
+        setSummaryText(
+          soleWinnerName
+            ? `الجولة ${roundNum}: صمد ${soleWinnerName} وكسب +٦٠ نقطة!`
+            : loserName
+              ? `الجولة ${roundNum}: وقع برج ${loserName}! الناجون كسبوا نقاط الصمود 💦`
+              : `انتهت الجولة ${roundNum}!`
+        );
+        soundManager.play('next');
+        setPhase('INTER_ROUND');
+      }
+    },
+    [disposePhysics, players, seriesScores, roundNum, totalRounds, onApplyDeltas]
+  );
+
+  // Inter-round overlay progression
+  useEffect(() => {
+    if (phase !== 'INTER_ROUND') return;
+    const t = window.setTimeout(() => {
+      setRoundNum((r) => r + 1);
+      setPhase('PLAYING');
+    }, 3000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
+  // Initialize fresh Matter.js world each round
+  const initRoundWorld = useCallback(() => {
+    disposePhysics();
+    roundEndedRef.current = false;
+
+    const engine = Matter.Engine.create({
+      gravity: { x: 0, y: 1.05, scale: 0.001 },
+      positionIterations: 10,
+      velocityIterations: 8,
     });
 
-    simRef.current = {
-      blocks: [],
-      nextBlockId: 1,
-      boardAngle: 0,
-      boardAngVel: 0,
-      craneX: WORLD_W / 2,
-      steerDir: 0,
-      droppingBlock: null,
-      settlingUntil: 0,
-      collapseTriggered: false,
-      turnIdx: 0,
-      eliminated: new Set(),
-      surviveBonuses: bonuses,
-      currentSpec: firstAnimal,
-      particles: [],
-      waveTime: 0,
-      lastJoyHapticSign: 0,
-      ended: false,
-    };
+    const platform = Matter.Bodies.rectangle(PLATFORM_X, PLATFORM_Y, PLATFORM_W, PLATFORM_H, {
+      isStatic: true,
+      friction: 1.0,
+      frictionStatic: 1.2,
+      restitution: 0.02,
+      chamfer: { radius: 8 },
+      label: 'platform',
+    });
 
-    setActivePlayerIdx(0);
-    setEliminatedIds([]);
-    setCurrentAnimal(firstAnimal);
-    setStackedCount(0);
-    setIsDropping(false);
-    setStatusBanner(null);
-    setRoundDeltas([]);
-    setWinnerPlayers([]);
-    setPhase('PLAYING');
-  });
+    Matter.World.add(engine.world, platform);
+    engineRef.current = engine;
+    metaMapRef.current.clear();
 
-  const handleDropAnimal = useCallback(() => {
-    const sim = simRef.current;
-    if (phase !== 'PLAYING' || sim.droppingBlock || sim.settlingUntil > 0 || sim.ended) {
-      return;
+    const firstTurn = (roundNum - 1) % players.length;
+    turnIdxRef.current = firstTurn;
+    turnStageRef.current = 'AIMING';
+    const nextSpec = pickRandomAnimal();
+    currentAnimalRef.current = nextSpec;
+    eliminatedRef.current = {};
+    roundPointsRef.current = {};
+    aimXRef.current = PLATFORM_X;
+    aimAngleRef.current = 0;
+    cameraYRef.current = 0;
+    targetCameraYRef.current = 0;
+    highestStackedYRef.current = PLATFORM_Y - PLATFORM_H / 2;
+    settleTimerRef.current = 0;
+    settlingElapsedRef.current = 0;
+    lastDropBodyIdRef.current = null;
+    splashesRef.current = [];
+    bannersRef.current = [];
+
+    setTurnIdx(firstTurn);
+    setTurnStage('AIMING');
+    setCurrentAnimal(nextSpec);
+    setEliminatedSet({});
+    setRoundPointsMap({});
+    setTowerHeightM(0);
+    setPlacedCount(0);
+  }, [disposePhysics, players.length, roundNum]);
+
+  useEffect(() => {
+    if (phase === 'PLAYING') {
+      initRoundWorld();
     }
-    const activePlayer = participatingPlayers[sim.turnIdx];
-    if (!activePlayer) return;
+  }, [phase, initRoundWorld]);
 
-    soundManager.unlock();
-    soundManager.play('slash');
-    triggerHaptic(18);
-
-    sim.droppingBlock = {
-      spec: sim.currentSpec,
-      x: sim.craneX,
-      y: CRANE_HOVER_Y + 4,
-      vy: 75,
-      ownerColor: colorForPlayer(activePlayer.id),
+  // Keep canvas DPR sized to full viewport
+  useEffect(() => {
+    if (phase !== 'PLAYING') return;
+    const syncSize = () => {
+      const container = arenaRef.current;
+      const canvas = canvasRef.current;
+      if (!container || !canvas) return;
+      const rect = container.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      viewSizeRef.current = { w: rect.width, h: rect.height };
     };
-    sim.collapseTriggered = false;
-    setIsDropping(true);
-  }, [colorForPlayer, participatingPlayers, phase]);
+    syncSize();
+    const ro = new ResizeObserver(syncSize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', syncSize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncSize);
+    };
+  }, [phase]);
 
-  // Main physics + canvas loop
+  // Main Matter.js simulation + canvas renderer
   useEffect(() => {
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
-    let lastTime = performance.now();
-    const cfg = STABILITY_CONFIG[stability];
+    let lastTs = performance.now();
 
-    const step = (now: number) => {
-      const dt = Math.min(0.032, (now - lastTime) / 1000);
-      lastTime = now;
-      const sim = simRef.current;
-      if (sim.ended) return;
+    const advanceToNextPlayer = () => {
+      if (roundEndedRef.current) return;
+      const aliveIndices = players
+        .map((_, idx) => idx)
+        .filter((idx) => !eliminatedRef.current[idx]);
 
-      sim.waveTime += dt;
+      if (aliveIndices.length <= 1) {
+        finishRound(aliveIndices, null);
+        return;
+      }
 
-      // 1. Move crane horizontally when aiming
-      if (!sim.droppingBlock && sim.settlingUntil === 0) {
-        sim.craneX = Math.max(
-          CRANE_MARGIN_X,
-          Math.min(WORLD_W - CRANE_MARGIN_X, sim.craneX + sim.steerDir * 240 * dt)
+      let nextIdx = (turnIdxRef.current + 1) % players.length;
+      let guardCount = 0;
+      while (eliminatedRef.current[nextIdx] && guardCount < players.length) {
+        nextIdx = (nextIdx + 1) % players.length;
+        guardCount++;
+      }
+
+      const nextSpec = pickRandomAnimal();
+      turnIdxRef.current = nextIdx;
+      turnStageRef.current = 'AIMING';
+      currentAnimalRef.current = nextSpec;
+      aimXRef.current = PLATFORM_X;
+      aimAngleRef.current = 0;
+
+      // Update camera to rise comfortably so active animal spawns high below the HUD with generous drop room
+      const { initialHoverY } = getStageMetrics(viewSizeRef.current.w, viewSizeRef.current.h);
+      const desiredHoverY = highestStackedYRef.current - DROP_CLEARANCE;
+      targetCameraYRef.current = Math.min(0, desiredHoverY - initialHoverY);
+
+      setTurnIdx(nextIdx);
+      setTurnStage('AIMING');
+      setCurrentAnimal(nextSpec);
+    };
+
+    const drawScene = (now: number) => {
+      const canvas = canvasRef.current;
+      const engine = engineRef.current;
+      if (!canvas || !engine) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const { w: vw, h: vh } = viewSizeRef.current;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Portrait Fullscreen mapping: fills full mobile width & leaves ~9% water gap on left/right
+      const { scale: safeScale, offsetX, baseGroundScreenY, initialHoverY } = getStageMetrics(
+        vw,
+        vh
+      );
+      const worldOriginY =
+        baseGroundScreenY - PLATFORM_Y * safeScale - cameraYRef.current * safeScale;
+
+      // Sky gradient (shifts slightly deeper blue with altitude!)
+      const altRatio = Math.min(1, Math.abs(cameraYRef.current) / 900);
+      const skyGrad = ctx.createLinearGradient(0, 0, 0, vh);
+      skyGrad.addColorStop(0, altRatio > 0.4 ? '#0284C7' : '#38BDF8');
+      skyGrad.addColorStop(0.58, '#7DD3FC');
+      skyGrad.addColorStop(1, '#BAE6FD');
+      ctx.fillStyle = skyGrad;
+      ctx.fillRect(0, 0, vw, vh);
+
+      // Parallax clouds
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.78)';
+      const cloudParallax = -cameraYRef.current * 0.25 * safeScale;
+      for (let i = 0; i < 6; i++) {
+        const cx = ((i * 195 + now * 0.012 * (i % 2 === 0 ? 1 : 0.7)) % (vw + 160)) - 80;
+        const cy = ((90 + i * 115 + cloudParallax) % (vh + 120)) - 40;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 24, 0, Math.PI * 2);
+        ctx.arc(cx + 22, cy - 8, 28, 0, Math.PI * 2);
+        ctx.arc(cx + 46, cy, 22, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.translate(offsetX, worldOriginY);
+      ctx.scale(safeScale, safeScale);
+
+      // Height meter lines every 80 world units (spanning all the way to the top of the screen)
+      const topVisibleWorldY = -worldOriginY / safeScale;
+      const maxH = Math.max(8, Math.ceil((PLATFORM_Y - topVisibleWorldY + 120) / 80));
+      ctx.font = '800 11px Cairo, sans-serif';
+      ctx.textAlign = 'left';
+      for (let step = 1; step <= maxH; step++) {
+        const lineY = PLATFORM_Y - PLATFORM_H / 2 - step * 80;
+        ctx.strokeStyle = 'rgba(255,255,255,0.34)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(16, lineY);
+        ctx.lineTo(WORLD_W - 16, lineY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+        ctx.fillText(`${step * 2}م`, 18, lineY - 4);
+      }
+
+      // Supporting ancient stone pillar beneath platform
+      const pillarGrad = ctx.createLinearGradient(PLATFORM_X - 45, 0, PLATFORM_X + 45, 0);
+      pillarGrad.addColorStop(0, '#94A3B8');
+      pillarGrad.addColorStop(0.5, '#CBD5E1');
+      pillarGrad.addColorStop(1, '#64748B');
+      ctx.fillStyle = pillarGrad;
+      ctx.fillRect(PLATFORM_X - 38, PLATFORM_Y + PLATFORM_H / 2 - 4, 76, 260);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(PLATFORM_X - 38, PLATFORM_Y + PLATFORM_H / 2 - 4, 76, 260);
+
+      // Wide stable grassy/wooden platform
+      const platLeft = PLATFORM_X - PLATFORM_W / 2;
+      const platTop = PLATFORM_Y - PLATFORM_H / 2;
+      drawRoundedRect(ctx, platLeft, platTop, PLATFORM_W, PLATFORM_H, 10);
+      ctx.fillStyle = '#92400E';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#451A03';
+      ctx.stroke();
+
+      // Lush grassy top strip on platform
+      drawRoundedRect(ctx, platLeft - 2, platTop - 2, PLATFORM_W + 4, 13, 8);
+      ctx.fillStyle = '#22C55E';
+      ctx.fill();
+      ctx.strokeStyle = '#14532D';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Animated Water Hazard at bottom of world
+      const waterWave = Math.sin(now * 0.004) * 5;
+      const waterGrad = ctx.createLinearGradient(0, WATER_Y, 0, WATER_Y + 260);
+      waterGrad.addColorStop(0, 'rgba(14, 165, 233, 0.85)');
+      waterGrad.addColorStop(1, 'rgba(3, 105, 161, 0.98)');
+      ctx.fillStyle = waterGrad;
+      ctx.beginPath();
+      ctx.moveTo(-400, WATER_Y + 300);
+      for (let wx = -400; wx <= WORLD_W + 400; wx += 28) {
+        const wy = WATER_Y + Math.sin(wx * 0.04 + now * 0.004) * 4 + waterWave * 0.3;
+        ctx.lineTo(wx, wy);
+      }
+      ctx.lineTo(WORLD_W + 400, WATER_Y + 300);
+      ctx.closePath();
+      ctx.fill();
+
+      // Stacked Matter.js rigid bodies
+      const bodies = Matter.Composite.allBodies(engine.world);
+      for (const body of bodies) {
+        if (body.isStatic) continue;
+        const meta = metaMapRef.current.get(body.id);
+        if (!meta) continue;
+        drawAnimalSilhouette(
+          ctx,
+          meta.spec,
+          meta.playerHex,
+          body.position.x,
+          body.position.y,
+          body.angle,
+          1,
+          false
         );
       }
 
-      // 2. Compute torque on suspended board from all resting blocks
-      let totalTorque = 0;
-      sim.blocks.forEach((b) => {
-        if (!b.fallingOff) {
-          totalTorque += b.localX * b.spec.mass * cfg.torqueScale;
-        }
+      // Active Aiming Ghost + Laser Drop Guide (high near top of viewport below HUD)
+      if (turnStageRef.current === 'AIMING' && !roundEndedRef.current) {
+        const activeP = players[turnIdxRef.current];
+        const pHex = activeP ? ARCADE_COLORS[activeP.colorId].hex : '#F97316';
+        const hoverY = Math.min(initialHoverY, highestStackedYRef.current - DROP_CLEARANCE);
+
+        // Crisp vertical dotted drop-guide line down to the platform/tower top
+        ctx.save();
+        ctx.strokeStyle = `${pHex}CC`;
+        ctx.lineWidth = 2.4;
+        ctx.setLineDash([6, 7]);
+        ctx.beginPath();
+        ctx.moveTo(aimXRef.current, hoverY + 22);
+        ctx.lineTo(aimXRef.current, Math.max(hoverY + 50, highestStackedYRef.current + 12));
+        ctx.stroke();
+        ctx.restore();
+
+        // Target ring on drop origin
+        ctx.fillStyle = pHex;
+        ctx.beginPath();
+        ctx.arc(aimXRef.current, hoverY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Semi-transparent ghost preview + solid active animal bobbing subtly
+        const bob = Math.sin(now * 0.006) * 2.5;
+        drawAnimalSilhouette(
+          ctx,
+          currentAnimalRef.current,
+          pHex,
+          aimXRef.current,
+          hoverY + bob,
+          aimAngleRef.current,
+          0.92,
+          false
+        );
+      }
+
+      // Water splash particles
+      splashesRef.current.forEach((sp) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, sp.life);
+        ctx.fillStyle = sp.color;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, sp.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       });
 
-      const sway = Math.sin(sim.waveTime * 1.45) * (stability === 'wild' ? 0.13 : 0.032);
-      const angularAccel = totalTorque + sway - cfg.springK * sim.boardAngle - 3.9 * sim.boardAngVel;
-      sim.boardAngVel += angularAccel * dt;
-      sim.boardAngle += sim.boardAngVel * dt;
-
-      const cosA = Math.cos(sim.boardAngle);
-      const sinA = Math.sin(sim.boardAngle);
-      const pivotX = WORLD_W / 2;
-      const pivotY = BEAM_Y;
-
-      // Helper: convert (localX, localY above beam top) -> world coords
-      const toWorld = (lx: number, ly: number) => {
-        const up = BEAM_H / 2 + ly;
-        return {
-          x: pivotX + lx * cosA + up * sinA,
-          y: pivotY + lx * sinA - up * cosA,
-        };
-      };
-
-      // Lookup map for support blocks
-      const blockById = new Map<number, StackedBlock>();
-      sim.blocks.forEach((b) => blockById.set(b.id, b));
-
-      // 3. Update stacked blocks with shape-aware rolling, tipping & cascading support checks
-      const angleTooSteep = Math.abs(sim.boardAngle) > cfg.maxAngle;
-      sim.blocks.forEach((b) => {
-        if (!b.fallingOff) {
-          const support = b.supportId !== null ? blockById.get(b.supportId) : undefined;
-          if (b.supportId !== null && (!support || support.fallingOff)) {
-            b.fallingOff = true;
-            b.vx = Math.sin(sim.boardAngle) * 140 + (Math.random() - 0.5) * 80;
-            b.vy = 40;
-          } else {
-            const supportLocalX = support ? support.localX : 0;
-            const supportHalfW = support ? support.spec.baseHalfW : BEAM_W / 2;
-            const supportTilt = support ? support.localRot : 0;
-            const effectiveSlope = sim.boardAngle + supportTilt * 0.72;
-            const offsetFromSupport = b.localX - supportLocalX;
-            const normOverhang = offsetFromSupport / Math.max(8, supportHalfW);
-
-            // Round animals roll on smaller slopes; narrow/top-heavy animals tip under overhang
-            const slideThreshold = Math.max(0.05, 0.17 - b.spec.roundness * 0.09);
-            if (Math.abs(effectiveSlope) > slideThreshold) {
-              const rollBoost = 1 + b.spec.roundness * 1.1;
-              b.localX += Math.sin(effectiveSlope) * 135 * rollBoost * dt;
-            }
-
-            // Tipping torque on local rotation from overhang + shape roundness/top-heaviness
-            const tipFactor = 1 + b.spec.topHeavy * 1.25 + b.spec.roundness * 0.6;
-            const localTipAccel =
-              normOverhang * 4.4 * tipFactor +
-              effectiveSlope * 2.2 -
-              b.localRot * (8.5 - b.spec.topHeavy * 4.0) -
-              b.rotVel * 3.4;
-            b.rotVel += localTipAccel * dt;
-            b.localRot += b.rotVel * dt;
-
-            // Rounded animals roll sideways as they tilt
-            if (b.spec.roundness > 0.45) {
-              b.localX += b.localRot * 36 * b.spec.roundness * dt;
-            }
-
-            const wp = toWorld(b.localX, b.localY);
-            b.worldX = wp.x;
-            b.worldY = wp.y;
-            b.rot = sim.boardAngle + b.localRot;
-
-            const maxAllowedOverhang = supportHalfW + b.spec.baseHalfW * (0.42 - b.spec.topHeavy * 0.16);
-            const maxLocalTilt = 0.66 - b.spec.topHeavy * 0.22;
-
-            if (
-              angleTooSteep ||
-              Math.abs(b.localX - supportLocalX) > maxAllowedOverhang ||
-              Math.abs(b.localRot) > maxLocalTilt
-            ) {
-              b.fallingOff = true;
-              const pushDir =
-                Math.abs(b.localX - supportLocalX) > 3
-                  ? Math.sign(b.localX - supportLocalX)
-                  : Math.sign(effectiveSlope || 1);
-              b.vx = Math.sin(sim.boardAngle) * 150 + pushDir * 85;
-              b.vy = 35;
-            }
-          }
-        }
-
-        if (b.fallingOff) {
-          b.vy += 820 * dt;
-          b.worldX += b.vx * dt;
-          b.worldY += b.vy * dt;
-          b.rot += (b.vx >= 0 ? 3.2 : -3.2) * dt;
-        }
+      // Floating banners
+      bannersRef.current.forEach((bn) => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, bn.life));
+        ctx.font = '900 17px Cairo, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#0F172A';
+        ctx.lineWidth = 4;
+        ctx.strokeText(bn.text, bn.x, bn.y);
+        ctx.fillStyle = bn.color;
+        ctx.fillText(bn.text, bn.x, bn.y);
+        ctx.restore();
       });
 
-      // Helper to compute exact predicted drop landing along vertical laser from dropX
-      const computePredictedDrop = (dropX: number, dropSpec: AnimalSpec): {
-        hasSupport: boolean;
-        landedOnBlock: StackedBlock | null;
-        surfaceY: number;
-        targetCenterY: number;
-      } => {
-        const relX = dropX - pivotX;
-        const beamSurfaceY = pivotY + relX * sinA - BEAM_H / 2;
-        const onBeamWidth = Math.abs(relX) <= BEAM_W / 2 + dropSpec.baseHalfW * 0.45;
-        let landedOnBlock: StackedBlock | null = null;
-        let surfaceY = beamSurfaceY;
+      ctx.restore();
+    };
 
-        for (const b of sim.blocks) {
-          if (b.fallingOff) continue;
-          const horizDist = Math.abs(dropX - b.worldX);
-          const overlapW = dropSpec.baseHalfW * 0.65 + b.spec.baseHalfW * 0.92;
-          if (horizDist <= overlapW) {
-            const topY = b.worldY - b.spec.h * 0.46;
-            if (topY < surfaceY) {
-              surfaceY = topY;
-              landedOnBlock = b;
-            }
-          }
+    const step = (now: number) => {
+      const dt = Math.min(0.032, (now - lastTs) / 1000);
+      lastTs = now;
+      const engine = engineRef.current;
+      if (!engine) return;
+
+      // Smooth hold-button horizontal movement during AIMING
+      if (turnStageRef.current === 'AIMING' && holdDirRef.current !== 0) {
+        aimXRef.current = Math.max(
+          MIN_AIM_X,
+          Math.min(MAX_AIM_X, aimXRef.current + holdDirRef.current * 210 * dt)
+        );
+      }
+
+      // Step Matter.js physics with stable 16.67ms substeps
+      Matter.Engine.update(engine, dt * 1000);
+
+      // Smooth rising camera interpolation
+      cameraYRef.current += (targetCameraYRef.current - cameraYRef.current) * Math.min(1, dt * 6.5);
+
+      // Check stacked bodies for height & water falls
+      let highestY = PLATFORM_Y - PLATFORM_H / 2;
+      let maxVel = 0;
+      let fellBody: { body: Matter.Body; meta: PlacedBodyMeta } | null = null;
+      let stackedCount = 0;
+
+      const bodies = Matter.Composite.allBodies(engine.world);
+      for (const b of bodies) {
+        if (b.isStatic) continue;
+        const meta = metaMapRef.current.get(b.id);
+        if (!meta) continue;
+        stackedCount++;
+
+        if (b.position.y > WATER_Y || b.position.x < -140 || b.position.x > WORLD_W + 140) {
+          fellBody = { body: b, meta };
+          break;
         }
 
-        return {
-          hasSupport: landedOnBlock !== null || onBeamWidth,
-          landedOnBlock,
-          surfaceY,
-          targetCenterY: surfaceY - dropSpec.h * 0.48,
-        };
-      };
+        if (b.bounds.min.y < highestY) {
+          highestY = b.bounds.min.y;
+        }
+        const spd = Math.hypot(b.velocity.x, b.velocity.y);
+        maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 18);
+      }
 
-      // 4. Update dropping block
-      if (sim.droppingBlock) {
-        const drop = sim.droppingBlock;
-        drop.vy += 940 * dt;
-        drop.y += drop.vy * dt;
+      highestStackedYRef.current = highestY;
+      const meters = Math.max(
+        0,
+        Math.round(((PLATFORM_Y - PLATFORM_H / 2 - highestY) / 40) * 10) / 10
+      );
+      setTowerHeightM(meters);
+      setPlacedCount(stackedCount);
 
-        const pred = computePredictedDrop(drop.x, drop.spec);
+      if (fellBody && !roundEndedRef.current && turnStageRef.current !== 'COLLAPSED') {
+        const culpritIdx = turnIdxRef.current;
+        turnStageRef.current = 'COLLAPSED';
+        setTurnStage('COLLAPSED');
+        soundManager.play('splash');
+        triggerHaptic([60, 40, 90]);
 
-        if (pred.hasSupport && drop.y >= pred.targetCenterY) {
-          const support = pred.landedOnBlock;
-          const localX = (drop.x - pivotX) / Math.max(0.4, cosA);
-          const localY = support
-            ? support.localY + support.spec.h * 0.46 + drop.spec.h * 0.48
-            : drop.spec.h * 0.48;
-
-          const overhangOffset = support ? localX - support.localX : localX;
-          const tipKick =
-            (overhangOffset / (support ? support.spec.baseHalfW : BEAM_W / 2)) *
-            (0.8 + drop.spec.topHeavy * 1.1);
-
-          const wp = toWorld(localX, localY);
-          sim.blocks.push({
-            id: sim.nextBlockId++,
-            supportId: support ? support.id : null,
-            spec: drop.spec,
-            localX,
-            localY,
-            localRot: tipKick * 0.14,
-            rotVel: tipKick * 1.8,
-            vy: 0,
-            vx: 0,
-            fallingOff: false,
-            worldX: wp.x,
-            worldY: wp.y,
-            rot: sim.boardAngle,
-            ownerColor: drop.ownerColor,
+        // Spawn big water splash at fall point
+        const splashX = Math.max(30, Math.min(WORLD_W - 30, fellBody.body.position.x));
+        for (let i = 0; i < 22; i++) {
+          const ang = -Math.PI * Math.random();
+          const spd = 90 + Math.random() * 210;
+          splashesRef.current.push({
+            x: splashX,
+            y: WATER_Y - 4,
+            vx: Math.cos(ang) * spd,
+            vy: Math.sin(ang) * spd - 40,
+            color: i % 2 === 0 ? '#E0F2FE' : '#38BDF8',
+            size: 3 + Math.random() * 4.5,
+            life: 0.9 + Math.random() * 0.4,
           });
-          // Mass-weighted impact impulse onto seesaw board
-          sim.boardAngVel += (localX / BEAM_W) * drop.spec.mass * 0.72;
-          sim.droppingBlock = null;
-          sim.settlingUntil = now + 1100;
-          soundManager.play('bounce');
-          triggerHaptic(20);
-          setStackedCount(sim.blocks.filter((b) => !b.fallingOff).length);
-        } else if (drop.y > WATER_Y) {
-          spawnSplash(drop.x, WATER_Y, '#38BDF8');
-          sim.droppingBlock = null;
-          sim.collapseTriggered = true;
-          sim.settlingUntil = now + 650;
-          soundManager.play('splash');
-          triggerHaptic([60, 40, 80]);
         }
+
+        const loserPlayer = players[culpritIdx];
+        bannersRef.current.push({
+          x: PLATFORM_X,
+          y: highestY - 30,
+          text: `وقع برج ${loserPlayer?.name ?? ''}! 💦`,
+          color: '#FCA5A5',
+          life: 1.8,
+        });
+
+        // Mark player eliminated & either continue or end round
+        const nextElim = { ...eliminatedRef.current, [culpritIdx]: true };
+        eliminatedRef.current = nextElim;
+        setEliminatedSet(nextElim);
+
+        // Give survival bonus to remaining alive players
+        players.forEach((p, idx) => {
+          if (!nextElim[idx]) {
+            roundPointsRef.current[p.id] = (roundPointsRef.current[p.id] ?? 0) + 30;
+          }
+        });
+        setRoundPointsMap({ ...roundPointsRef.current });
+
+        const alive = players.map((_, idx) => idx).filter((idx) => !nextElim[idx]);
+        collapseTimerRef.current = window.setTimeout(() => {
+          finishRound(alive, culpritIdx);
+        }, 1100);
       }
 
-      // Check if any falling-off stacked block hit water
-      for (let i = sim.blocks.length - 1; i >= 0; i--) {
-        const b = sim.blocks[i];
-        if (b.fallingOff && b.worldY >= WATER_Y) {
-          spawnSplash(b.worldX, WATER_Y, '#38BDF8');
-          sim.blocks.splice(i, 1);
-          if (!sim.collapseTriggered) {
-            sim.collapseTriggered = true;
-            sim.settlingUntil = Math.max(sim.settlingUntil, now + 700);
-            soundManager.play('splash');
-            soundManager.play('error');
-            triggerHaptic([70, 40, 90]);
-          }
+      // Check settle completion during SETTLING
+      if (turnStageRef.current === 'SETTLING' && !roundEndedRef.current) {
+        settlingElapsedRef.current += dt;
+        if (maxVel < 0.24) {
+          settleTimerRef.current += dt;
+        } else {
+          settleTimerRef.current = 0;
         }
-      }
 
-      // 5. Turn settle completion
-      if (sim.settlingUntil > 0 && now >= sim.settlingUntil) {
-        sim.settlingUntil = 0;
-        setIsDropping(false);
-
-        const activePlayer = participatingPlayers[sim.turnIdx];
-        if (sim.collapseTriggered && activePlayer) {
-          sim.eliminated.add(activePlayer.id);
-          setEliminatedIds(Array.from(sim.eliminated));
-          sim.blocks = sim.blocks.filter((b) => !b.fallingOff);
-          if (Math.abs(sim.boardAngle) > cfg.maxAngle * 0.72) {
-            sim.blocks = [];
-            sim.boardAngle = 0;
-            sim.boardAngVel = 0;
-          }
-          setStackedCount(sim.blocks.length);
-
-          const survivors = participatingPlayers.filter((p) => !sim.eliminated.has(p.id));
-          if (survivors.length <= 1) {
-            sim.ended = true;
-            const champ = survivors[0] ?? null;
-            const deltas: RoundDelta[] = players.map((p) => {
-              const isSelected = participatingPlayers.some((sp) => sp.id === p.id);
-              if (!isSelected) return { playerId: p.id, delta: 0 };
-              const survivePts = sim.surviveBonuses[p.id] ?? 0;
-              const winPts = champ && p.id === champ.id ? 100 : 0;
-              return { playerId: p.id, delta: survivePts + winPts };
+        if (settleTimerRef.current >= 0.45 || settlingElapsedRef.current >= 3.8) {
+          // Safe placement! Award player points
+          const activeP = players[turnIdxRef.current];
+          if (activeP) {
+            const pts = 20 + Math.min(20, Math.floor(meters * 2));
+            roundPointsRef.current[activeP.id] = (roundPointsRef.current[activeP.id] ?? 0) + pts;
+            setRoundPointsMap({ ...roundPointsRef.current });
+            bannersRef.current.push({
+              x: aimXRef.current,
+              y: highestY - 26,
+              text: `+${pts} توازن بطل!`,
+              color: '#86EFAC',
+              life: 1.15,
             });
-            setRoundDeltas(deltas);
-            setWinnerPlayers(champ ? [champ] : []);
-            onApplyDeltas(deltas);
-            soundManager.play('victory');
-            setPhase('WINNER_SPOTLIGHT');
-            return;
           }
-
-          setStatusBanner(`${activePlayer.name} وقع البرج وخرج!`);
-          const nextIdx = findNextSurvivorIdx(sim.turnIdx, sim.eliminated, participatingPlayers.length);
-          sim.turnIdx = nextIdx;
-          setActivePlayerIdx(nextIdx);
-        } else if (activePlayer) {
-          sim.surviveBonuses[activePlayer.id] = (sim.surviveBonuses[activePlayer.id] ?? 0) + 15;
           soundManager.play('catch');
-          setStatusBanner(null);
-          const nextIdx = findNextSurvivorIdx(sim.turnIdx, sim.eliminated, participatingPlayers.length);
-          sim.turnIdx = nextIdx;
-          setActivePlayerIdx(nextIdx);
+          triggerHaptic(20);
+          advanceToNextPlayer();
         }
-
-        const nextSpec = pickRandomAnimal();
-        sim.currentSpec = nextSpec;
-        setCurrentAnimal(nextSpec);
       }
 
-      // 6. Update particles
-      for (let i = sim.particles.length - 1; i >= 0; i--) {
-        const pt = sim.particles[i];
-        pt.vy += 460 * dt;
-        pt.x += pt.vx * dt;
-        pt.y += pt.vy * dt;
-        pt.life -= dt;
-        if (pt.life <= 0) sim.particles.splice(i, 1);
-      }
+      // Update VFX
+      splashesRef.current = splashesRef.current
+        .map((s) => ({
+          ...s,
+          x: s.x + s.vx * dt,
+          y: s.y + s.vy * dt,
+          vy: s.vy + 460 * dt,
+          life: s.life - dt,
+        }))
+        .filter((s) => s.life > 0);
 
-      // 7. Render vertical portrait canvas
-      const canvas = canvasRef.current;
-      const ctx = canvas?.getContext('2d');
-      if (canvas && ctx) {
-        const sky = ctx.createLinearGradient(0, 0, 0, WORLD_H);
-        sky.addColorStop(0, '#0284C7');
-        sky.addColorStop(0.35, '#38BDF8');
-        sky.addColorStop(0.78, '#BAE6FD');
-        sky.addColorStop(1, '#E0F2FE');
-        ctx.fillStyle = sky;
-        ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+      bannersRef.current = bannersRef.current
+        .map((b) => ({ ...b, y: b.y - 26 * dt, life: b.life - dt * 0.9 }))
+        .filter((b) => b.life > 0);
 
-        // Subtle height altitude ruler ticks for tall vertical tower progress
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.24)';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
-        ctx.font = '800 11px Cairo, sans-serif';
-        ctx.textAlign = 'left';
-        for (let m = 1; m <= 6; m++) {
-          const ty = BEAM_Y - m * 85;
-          if (ty < 90) break;
-          ctx.setLineDash([4, 6]);
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(14, ty);
-          ctx.lineTo(54, ty);
-          ctx.stroke();
-          ctx.fillText(`${m * 2}m`, 14, ty - 4);
-        }
-        ctx.restore();
-
-        // Soft drifting clouds
-        ctx.fillStyle = 'rgba(255,255,255,0.72)';
-        const cloudDrift = (sim.waveTime * 12) % (WORLD_W + 140);
-        [70, 240, 390].forEach((cx, idx) => {
-          const x = ((cx + cloudDrift) % (WORLD_W + 120)) - 60;
-          const y = 115 + idx * 95;
-          ctx.beginPath();
-          ctx.arc(x, y, 20, 0, Math.PI * 2);
-          ctx.arc(x + 20, y - 7, 24, 0, Math.PI * 2);
-          ctx.arc(x + 42, y, 18, 0, Math.PI * 2);
-          ctx.fill();
-        });
-
-        // Suspension ropes from top frame to beam ends
-        const leftEnd = {
-          x: pivotX - (BEAM_W / 2 - 14) * cosA,
-          y: pivotY - (BEAM_W / 2 - 14) * sinA,
-        };
-        const rightEnd = {
-          x: pivotX + (BEAM_W / 2 - 14) * cosA,
-          y: pivotY + (BEAM_W / 2 - 14) * sinA,
-        };
-        ctx.strokeStyle = 'rgba(120, 53, 15, 0.42)';
-        ctx.lineWidth = 2.6;
-        ctx.beginPath();
-        ctx.moveTo(pivotX - 115, 0);
-        ctx.lineTo(leftEnd.x, leftEnd.y);
-        ctx.moveTo(pivotX + 115, 0);
-        ctx.lineTo(rightEnd.x, rightEnd.y);
-        ctx.stroke();
-
-        // Wooden Balance Beam
-        ctx.save();
-        ctx.translate(pivotX, pivotY);
-        ctx.rotate(sim.boardAngle);
-        const woodGrad = ctx.createLinearGradient(0, -BEAM_H / 2, 0, BEAM_H / 2);
-        woodGrad.addColorStop(0, '#D97706');
-        woodGrad.addColorStop(1, '#92400E');
-        ctx.fillStyle = woodGrad;
-        ctx.strokeStyle = '#451A03';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.roundRect(-BEAM_W / 2, -BEAM_H / 2, BEAM_W, BEAM_H, 8);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#FEF3C7';
-        ctx.fillRect(-3, -BEAM_H / 2 + 2, 6, BEAM_H - 4);
-        ctx.restore();
-
-        // Stacked animals
-        sim.blocks.forEach((b) => {
-          drawAnimalBody(ctx, b.spec, b.worldX, b.worldY, b.rot, b.ownerColor);
-        });
-
-        // Crane claw & next animal OR dropping animal
-        if (sim.droppingBlock) {
-          drawAnimalBody(
-            ctx,
-            sim.droppingBlock.spec,
-            sim.droppingBlock.x,
-            sim.droppingBlock.y,
-            0,
-            sim.droppingBlock.ownerColor
-          );
-        } else if (sim.settlingUntil === 0) {
-          const activePlayer = participatingPlayers[sim.turnIdx];
-          const pColor = activePlayer ? colorForPlayer(activePlayer.id) : '#FF6B4A';
-          const pred = computePredictedDrop(sim.craneX, sim.currentSpec);
-          const laserEndY = pred.hasSupport ? pred.surfaceY : WATER_Y - 6;
-
-          // Crisp Vertical Drop-Guide Laser
-          ctx.save();
-          const laserColor = pred.hasSupport ? '#0EA5E9' : '#EF4444';
-          const laserGrad = ctx.createLinearGradient(sim.craneX, CRANE_HOVER_Y + 24, sim.craneX, laserEndY);
-          laserGrad.addColorStop(0, 'rgba(255,255,255,0.18)');
-          laserGrad.addColorStop(1, pred.hasSupport ? 'rgba(14, 165, 233, 0.92)' : 'rgba(239, 68, 68, 0.85)');
-          ctx.strokeStyle = laserGrad;
-          ctx.lineWidth = 2.6;
-          ctx.setLineDash([7, 5]);
-          ctx.beginPath();
-          ctx.moveTo(sim.craneX, CRANE_HOVER_Y + 26);
-          ctx.lineTo(sim.craneX, laserEndY);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Pulsing target reticle at predicted landing point
-          const pulseR = 6 + Math.sin(sim.waveTime * 8) * 1.8;
-          ctx.fillStyle = laserColor;
-          ctx.beginPath();
-          ctx.arc(sim.craneX, laserEndY, 4.2, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.strokeStyle = '#FFFFFF';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(sim.craneX, laserEndY, pulseR + 2, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.restore();
-
-          // Crane cable & hook
-          ctx.strokeStyle = '#1E293B';
-          ctx.lineWidth = 3.5;
-          ctx.beginPath();
-          ctx.moveTo(sim.craneX, 0);
-          ctx.lineTo(sim.craneX, CRANE_HOVER_Y - 22);
-          ctx.stroke();
-
-          drawAnimalBody(ctx, sim.currentSpec, sim.craneX, CRANE_HOVER_Y, 0, pColor);
-        }
-
-        // Shimmering water at bottom
-        ctx.fillStyle = 'rgba(14, 165, 233, 0.86)';
-        ctx.beginPath();
-        ctx.moveTo(0, WORLD_H);
-        for (let wx = 0; wx <= WORLD_W; wx += 20) {
-          const wy = WATER_Y + Math.sin(wx * 0.04 + sim.waveTime * 3.5) * 4.5;
-          ctx.lineTo(wx, wy);
-        }
-        ctx.lineTo(WORLD_W, WORLD_H);
-        ctx.closePath();
-        ctx.fill();
-
-        // Splash particles
-        sim.particles.forEach((pt) => {
-          ctx.globalAlpha = Math.max(0, pt.life);
-          ctx.fillStyle = pt.color;
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI * 2);
-          ctx.fill();
-        });
-        ctx.globalAlpha = 1;
-      }
-
+      drawScene(now);
       rafId = window.requestAnimationFrame(step);
     };
 
     rafId = window.requestAnimationFrame(step);
     return () => window.cancelAnimationFrame(rafId);
-  }, [colorForPlayer, onApplyDeltas, participatingPlayers, phase, players, stability]);
+  }, [phase, players, finishRound]);
 
-  const togglePlayerSelect = (id: string) => {
+  // Action Controls
+  const nudgeAim = (dir: -1 | 1) => {
+    if (turnStageRef.current !== 'AIMING') return;
+    aimXRef.current = Math.max(MIN_AIM_X, Math.min(MAX_AIM_X, aimXRef.current + dir * 20));
     soundManager.play('click');
-    setSelectedIds((prev) => {
-      if (prev.includes(id)) {
-        if (prev.length <= 2) {
-          soundManager.play('error');
-          return prev;
-        }
-        return prev.filter((x) => x !== id);
-      }
-      if (prev.length >= 6) {
-        soundManager.play('error');
-        return prev;
-      }
-      return [...prev, id];
-    });
+    triggerHaptic(12);
   };
 
-  // Zero-deadzone Floating Joystick handlers
-  const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    const rect = e.currentTarget.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    joyOriginRef.current = { x: cx, y: cy, pointerId: e.pointerId };
+  const rotateAnimal = () => {
+    if (turnStageRef.current !== 'AIMING') return;
+    aimAngleRef.current = (aimAngleRef.current + Math.PI / 4) % (Math.PI * 2);
+    soundManager.play('pop');
     triggerHaptic(15);
-    updateJoyFromPoint(e.clientX, e.clientY);
   };
 
-  const updateJoyFromPoint = (clientX: number, clientY: number) => {
-    const origin = joyOriginRef.current;
-    if (!origin) return;
-    const maxR = 42;
-    const dx = clientX - origin.x;
-    const dy = clientY - origin.y;
-    const dist = Math.hypot(dx, dy);
-    const clamped = dist > maxR ? maxR / dist : 1;
-    const kx = dx * clamped;
-    const ky = dy * clamped;
+  const dropAnimal = () => {
+    if (turnStageRef.current !== 'AIMING' || !engineRef.current || roundEndedRef.current) return;
+    soundManager.unlock();
+    soundManager.play('whoosh');
+    triggerHaptic(22);
 
-    // Instant response with zero deadzone lag
-    const steer = Math.max(-1, Math.min(1, kx / maxR));
-    simRef.current.steerDir = steer;
+    const activeP = players[turnIdxRef.current];
+    const pHex = activeP ? ARCADE_COLORS[activeP.colorId].hex : '#F97316';
+    const { initialHoverY } = getStageMetrics(viewSizeRef.current.w, viewSizeRef.current.h);
+    const spawnY = Math.min(initialHoverY, highestStackedYRef.current - DROP_CLEARANCE);
 
-    const sign = Math.abs(steer) > 0.2 ? Math.sign(steer) : 0;
-    if (sign !== 0 && sign !== simRef.current.lastJoyHapticSign) {
-      triggerHaptic(15);
-      simRef.current.lastJoyHapticSign = sign;
-    } else if (sign === 0) {
-      simRef.current.lastJoyHapticSign = 0;
-    }
-
-    setJoyKnob({ x: kx, y: ky, active: true });
-
-    // Pull down hard to quick-drop
-    if (ky > 34) {
-      handleDropAnimal();
-    }
-  };
-
-  const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!joyOriginRef.current || joyOriginRef.current.pointerId !== e.pointerId) return;
-    updateJoyFromPoint(e.clientX, e.clientY);
-  };
-
-  const handleJoyUp = () => {
-    joyOriginRef.current = null;
-    simRef.current.steerDir = 0;
-    simRef.current.lastJoyHapticSign = 0;
-    setJoyKnob({ x: 0, y: 0, active: false });
-  };
-
-  const activeTurnPlayer = participatingPlayers[activePlayerIdx];
-
-  if (phase === 'WINNER_SPOTLIGHT') {
-    const spotlightArcadeWinners: ArcadePlayer[] = winnerPlayers.map((w) => {
-      const found = participatingArcadePlayers.find((ap) => ap.id === w.id);
-      return found ?? { id: w.id, name: w.name, colorId: 'red', score: w.score };
-    });
-    const seriesMap: Record<string, number> = {};
-    roundDeltas.forEach((d) => {
-      seriesMap[d.playerId] = d.delta;
-    });
-    return (
-      <ArcadeWinnerSpotlight
-        winners={spotlightArcadeWinners}
-        seriesScores={seriesMap}
-        headline={
-          winnerPlayers[0]
-            ? `بطل برج التوازن: ${winnerPlayers[0].name}! 🐘`
-            : 'انتهت جولة برج التوازن!'
-        }
-        onContinueToLeaderboard={() => setPhase('LEADERBOARD')}
-      />
+    const body = createAnimalBody(
+      currentAnimalRef.current,
+      aimXRef.current,
+      spawnY,
+      aimAngleRef.current
     );
-  }
 
-  if (phase === 'LEADERBOARD') {
-    return (
-      <div className="min-h-screen flex flex-col">
-        <header className="w-full max-w-xl mx-auto px-4 pt-4 pb-2 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={guard(onExitToArcadeHub)}
-            className="min-w-[44px] min-h-[44px] rounded-2xl qada-glass-pill flex items-center justify-center text-[#1E293B] dark:text-[#F8FAFC]"
-          >
-            <ArrowRight className="w-5 h-5" />
-          </button>
-          <h1 className="text-xl font-black text-[#1E293B] dark:text-white">نتائج برج التوازن 🐘</h1>
-          <div className="w-11" />
-        </header>
-        <main className="flex-1 w-full max-w-xl mx-auto px-4 py-4">
-          <LeaderboardScreen
-            players={players}
-            deltas={roundDeltas}
-            summaryHeadline={
-              winnerPlayers[0]
-                ? `ملك التوازن: ${winnerPlayers[0].name} 🏆`
-                : 'برج التوازن 🐘'
-            }
-            isTournamentMode={Boolean(onTournamentFinish)}
-            onNewRound={() => setPhase('SETUP')}
-            onFinishGame={() => {
-              if (onTournamentFinish) {
-                onTournamentFinish(roundDeltas);
-              } else {
-                onExitToArcadeHub();
-              }
-            }}
-          />
-        </main>
-      </div>
-    );
-  }
+    metaMapRef.current.set(body.id, {
+      spec: currentAnimalRef.current,
+      playerIdx: turnIdxRef.current,
+      playerHex: pHex,
+      playerName: activeP?.name ?? 'لاعب',
+      droppedAt: performance.now(),
+      highestY: spawnY,
+    });
+    lastDropBodyIdRef.current = body.id;
+    Matter.World.add(engineRef.current.world, body);
+
+    holdDirRef.current = 0;
+    settleTimerRef.current = 0;
+    settlingElapsedRef.current = 0;
+    turnStageRef.current = 'SETTLING';
+    setTurnStage('SETTLING');
+  };
+
+  const activePlayer = players[turnIdx] ?? players[0];
+  const activeColor = activePlayer ? ARCADE_COLORS[activePlayer.colorId] : ARCADE_COLORS.red;
 
   return (
-    <div
-      ref={arenaRef}
-      className="min-h-[100dvh] w-full flex flex-col select-none"
-    >
-      {phase === 'SETUP' ? (
-        <>
-          <header className="w-full max-w-xl mx-auto px-4 pt-4 pb-2 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={guard(() => {
-                  soundManager.play('click');
-                  onExitToArcadeHub();
-                })}
-                aria-label="رجوع"
-                className="min-w-[44px] min-h-[44px] rounded-2xl qada-glass-pill flex items-center justify-center text-[#1E293B] dark:text-[#F8FAFC]"
-              >
-                <ArrowRight className="w-5 h-5" />
-              </button>
-              {goHome && <HomeLogoBadge onClick={goHome} />}
-            </div>
-            <h1 className="text-xl sm:text-2xl font-black text-[#1E293B] dark:text-white">
-              برج التوازن 🐘
-            </h1>
-            <div className="w-11" />
-          </header>
+    <div className="fixed inset-0 w-screen h-[100dvh] flex flex-col select-none overflow-hidden">
+      {phase === 'SETUP' && (
+        <div className="flex-1 overflow-y-auto">
+          <ArcadePreGameSetup
+            title="برج التوازن"
+            subtitle="حرّك ودوّر الحيوانات بفيزياء واقعية وأسقطها فوق المنصة من غير ما توقع في الميّة!"
+            players={players}
+            accentBgClass="bg-gradient-to-br from-[#0284c7] to-[#10b981]"
+            icon={<Layers className="w-12 h-12 text-white" />}
+            roundOptions={[3, 5, 7]}
+            defaultRounds={3}
+            onEditPlayers={onEditPlayers}
+            onStartSeries={(rounds) => {
+              setTotalRounds(rounds);
+              setRoundNum(1);
+              setSeriesScores({});
+              setPhase('PLAYING');
+            }}
+            onBack={onExitToArcadeHub}
+          />
+        </div>
+      )}
 
-          <main className="flex-1 w-full max-w-md mx-auto px-4 py-4 flex flex-col items-center justify-center gap-4">
-            <div className="w-full rounded-3xl qada-card p-5 text-center">
-              <div className="w-20 h-20 mx-auto mb-3 rounded-3xl bg-gradient-to-br from-[#0EA5E9] to-[#10B981] border-2 border-white flex items-center justify-center text-4xl shadow-lg animate-float-slow">
-                🐘
-              </div>
-              <h2 className="text-2xl font-black text-[#1E293B] dark:text-white mb-1.5">
-                برج توازن الحيوانات (٢–٦ لاعبين)
-              </h2>
-              <p className="text-xs sm:text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
-                كل لاعب في دوره بيحرك الحيوان بالجويستيك ويسقطه على اللوح المعلق. كل حيوان ليه وزن
-                مختلف — اللي يوقع أي حيوان في المية يخرج، وآخر صامد يكسب +١٠٠ نقطة!
-              </p>
-            </div>
+      {isRoundActive && (
+        <ArcadeFloatingHud
+          secondsLeft={null}
+          stageLabel={`جولة ${roundNum}/${totalRounds} · 📏 ${towerHeightM}م (${placedCount} 🐾)`}
+          muted={muted}
+          onRequestExit={() => setShowExitConfirm(true)}
+        />
+      )}
 
-            {/* Select 2-6 Players */}
-            <div className="w-full rounded-3xl qada-card p-4 text-right">
-              <div className="flex items-center justify-between gap-2 mb-2.5">
-                <span className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-white flex items-center gap-1.5">
-                  <Users className="w-4 h-4 text-[#0EA5E9]" />
-                  <span>اختار المشاركين (٢–٦ لاعبين):</span>
-                </span>
-                <span className="text-xs font-black text-[#059669] dark:text-[#34D399] tabular-nums">
-                  {participatingPlayers.length} لاعبين
-                </span>
-              </div>
+      {isRoundActive && (
+        <div
+          ref={arenaRef}
+          dir="ltr"
+          style={{ touchAction: 'none' }}
+          className="relative w-full h-full overflow-hidden"
+        >
+          <canvas
+            ref={canvasRef}
+            style={{ touchAction: 'none' }}
+            className="w-full h-full block bg-[#38BDF8]"
+          />
 
-              <div className="flex flex-wrap gap-2 mb-3">
-                {players.map((p) => {
-                  const isPicked = selectedIds.includes(p.id);
-                  const idx = selectedIds.indexOf(p.id);
-                  const cHex =
-                    idx >= 0
-                      ? ARCADE_COLORS[TURN_ARCADE_COLOR_ORDER[idx % TURN_ARCADE_COLOR_ORDER.length]].hex
-                      : '#94A3B8';
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => togglePlayerSelect(p.id)}
-                      className={`min-h-[38px] px-3 rounded-xl text-xs font-black border flex items-center gap-1.5 transition-all ${
-                        isPicked
-                          ? 'bg-white dark:bg-[#0F172A] border-[#10B981] text-[#1E293B] dark:text-white shadow-sm'
-                          : 'bg-[#FFF9F0]/60 dark:bg-[#0F172A]/40 border-[#E7DEC8] dark:border-[#334155] text-[#64748B] opacity-70'
-                      }`}
-                    >
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: cHex }}
-                      />
-                      <span>{p.name}</span>
-                      {isPicked && <Check className="w-3.5 h-3.5 text-[#10B981]" />}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Stability Level */}
-              <div className="pt-3 border-t border-[#E7DEC8]/60 dark:border-[#334155]">
-                <div className="text-xs font-black text-[#1E293B] dark:text-white mb-2">
-                  درجة ثبات المنصة:
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['calm', 'medium', 'wild'] as StabilityLevel[]).map((lvl) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      onClick={() => {
-                        soundManager.play('click');
-                        setStability(lvl);
-                      }}
-                      className={`min-h-[42px] rounded-xl text-xs sm:text-sm font-black transition-all ${
-                        stability === lvl
-                          ? 'qada-btn-teal text-white'
-                          : 'bg-[#FFF9F0]/80 dark:bg-[#0F172A]/80 border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8]'
-                      }`}
-                    >
-                      {STABILITY_CONFIG[lvl].label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={startGame}
-              className="w-full max-w-[270px] min-h-[56px] rounded-2xl bakasa-btn-green text-white text-xl font-black flex items-center justify-center gap-2 transition-transform"
-            >
-              <Play className="w-5 h-5 fill-current" />
-              <span>ابدأ التحدي!</span>
-            </button>
-          </main>
-        </>
-      ) : (
-        /* PLAYING SCREEN */
-        <div className="flex-1 flex flex-col w-full max-w-2xl mx-auto px-3 pt-2 pb-3">
-          {/* Pinned Active Turn Banner */}
-          {activeTurnPlayer && (
-            <ActiveTurnBanner
-              label="الدور على:"
-              player={activeTurnPlayer}
-              swatchHex={colorForPlayer(activeTurnPlayer.id)}
-              badgeText={`برج: ${stackedCount} · باقي ${
-                participatingPlayers.length - eliminatedIds.length
-              }`}
-              accent="teal"
-              sticky={false}
+          {/* Active Turn Banner */}
+          <div
+            dir="rtl"
+            className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-2xl bg-slate-950/80 border-2 border-white/25 px-3.5 py-1.5 shadow-xl backdrop-blur-md max-w-[92%]"
+          >
+            <span
+              style={{ backgroundColor: activeColor.hex }}
+              className="w-3.5 h-3.5 rounded-full border border-white shrink-0"
             />
-          )}
-
-          {/* Mini Action Strip */}
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setShowExitConfirm(true)}
-                className="min-h-[34px] px-3 rounded-xl qada-glass-pill text-xs font-black text-[#1E293B] dark:text-white"
-              >
-                خروج
-              </button>
-              <button
-                type="button"
-                aria-label={muted ? 'تشغيل الصوت' : 'كتم الصوت'}
-                onClick={() => soundManager.toggleMute()}
-                className="w-9 h-[34px] rounded-xl qada-glass-pill flex items-center justify-center text-[#1E293B] dark:text-white"
-              >
-                {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-              </button>
-            </div>
-
-            <div className="rounded-xl qada-glass-pill px-3 py-1 text-xs font-black text-[#1E293B] dark:text-white flex items-center gap-1.5">
-              <span>{currentAnimal.emoji}</span>
-              <span>{currentAnimal.name}</span>
-              <span className="text-[#64748B] dark:text-[#94A3B8]">
-                ({currentAnimal.mass >= 1.3 ? 'تقيل' : currentAnimal.mass >= 1 ? 'متوسط' : 'خفيف'})
+            <span className="text-xs sm:text-sm font-black text-white truncate">
+              دور: <span style={{ color: activeColor.hex }}>{activePlayer?.name}</span>
+            </span>
+            <span className="text-xs font-extrabold text-amber-300 shrink-0">
+              · {currentAnimal.emoji} {currentAnimal.name}
+            </span>
+            {Object.keys(eliminatedSet).length > 0 && (
+              <span className="text-[11px] font-bold text-rose-300 shrink-0">
+                · ({players.length - Object.keys(eliminatedSet).length} صامدين)
               </span>
-            </div>
+            )}
           </div>
 
-          {statusBanner && (
-            <div className="mb-2 rounded-xl bg-rose-500/90 text-white text-center py-1 px-3 text-xs font-black animate-pulse">
-              💦 {statusBanner}
-            </div>
-          )}
-
-          {/* Vertical Portrait Physics Canvas */}
-          <div className="relative flex-1 min-h-[280px] flex items-center justify-center py-0.5">
-            <canvas
-              ref={canvasRef}
-              width={WORLD_W}
-              height={WORLD_H}
-              className="h-full max-h-full aspect-[460/740] w-auto max-w-full rounded-3xl overflow-hidden border-2 border-white/75 dark:border-white/25 shadow-xl bg-[#BAE6FD] block touch-none"
-            />
-          </div>
-
-          {/* Survivors Strip */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5 my-2">
-            {participatingPlayers.map((p) => {
-              const isOut = eliminatedIds.includes(p.id);
-              const isActive = activeTurnPlayer?.id === p.id;
+          {/* Compact Single-Row Scrollable Score Strip (supports 2–20 players cleanly) */}
+          <div
+            dir="rtl"
+            className="fixed top-[98px] left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 flex-nowrap overflow-x-auto max-w-[95%] px-2 py-0.5"
+          >
+            {players.map((p, idx) => {
+              const c = ARCADE_COLORS[p.colorId];
+              const isTurn = idx === turnIdx;
+              const isOut = Boolean(eliminatedSet[idx]);
               return (
-                <span
+                <div
                   key={p.id}
-                  className={`px-2.5 py-1 rounded-xl text-[11px] font-black border transition-all ${
-                    isOut
-                      ? 'bg-rose-500/20 border-rose-400/50 text-rose-500 line-through opacity-55'
-                      : isActive
-                        ? 'bg-white dark:bg-[#1E293B] border-[#14B8A6] text-[#0F766E] dark:text-[#2DD4BF] scale-105 shadow-sm'
-                        : 'qada-glass-pill text-[#475569] dark:text-[#CBD5E1]'
+                  style={{ borderColor: isTurn ? c.hex : 'rgba(255,255,255,0.2)' }}
+                  className={`shrink-0 flex items-center gap-1 rounded-full bg-slate-950/75 border-2 px-2 py-0.5 text-[11px] font-black text-white backdrop-blur-sm ${
+                    isOut ? 'opacity-40 line-through' : ''
                   }`}
                 >
-                  {p.name}
-                </span>
+                  <span
+                    style={{ backgroundColor: c.hex }}
+                    className="w-2 h-2 rounded-full shrink-0"
+                  />
+                  <span className="truncate max-w-[54px]">{p.name}</span>
+                  <span className="tabular-nums text-emerald-300">
+                    {roundPointsMap[p.id] ?? 0}
+                  </span>
+                </div>
               );
             })}
           </div>
 
-          {/* Bottom Controls: Responsive Floating Joystick + Big Drop Button */}
-          <div className="flex items-center justify-between gap-4 px-2 pb-1">
-            {/* Floating Joystick */}
-            <div
-              onPointerDown={handleJoyDown}
-              onPointerMove={handleJoyMove}
-              onPointerUp={handleJoyUp}
-              onPointerCancel={handleJoyUp}
-              className="relative w-28 h-28 rounded-full qada-glass-pill flex items-center justify-center touch-none cursor-grab active:cursor-grabbing shrink-0"
+          {/* Bottom Tactile Control Bar: Move Left, Rotate, Drop, Move Right */}
+          <div
+            dir="ltr"
+            className="fixed bottom-4 inset-x-3 z-30 max-w-lg mx-auto grid grid-cols-4 gap-2"
+          >
+            <button
+              type="button"
+              disabled={turnStage !== 'AIMING'}
+              onPointerDown={() => {
+                holdDirRef.current = -1;
+                nudgeAim(-1);
+              }}
+              onPointerUp={() => {
+                if (holdDirRef.current === -1) holdDirRef.current = 0;
+              }}
+              onPointerLeave={() => {
+                if (holdDirRef.current === -1) holdDirRef.current = 0;
+              }}
+              onPointerCancel={() => {
+                if (holdDirRef.current === -1) holdDirRef.current = 0;
+              }}
+              className="min-h-[58px] rounded-2xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 disabled:opacity-45 border-2 border-white/30 border-b-4 border-b-black text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl backdrop-blur-md transition-transform"
             >
-              <div className="w-20 h-20 rounded-full border-2 border-dashed border-[#0EA5E9]/45 flex items-center justify-between px-1.5 text-[10px] font-black text-[#64748B]">
-                <span>◀</span>
-                <span>▶</span>
-              </div>
-              <div
-                style={{
-                  transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)`,
-                }}
-                className={`absolute w-12 h-12 rounded-full shadow-lg border-2 border-white flex items-center justify-center transition-transform ${
-                  joyKnob.active ? 'duration-0 scale-110 bg-[#0EA5E9]' : 'duration-150 bg-[#14B8A6]'
-                }`}
-              >
-                <Sparkles className="w-5 h-5 text-white" />
-              </div>
-            </div>
+              <span className="text-lg leading-none">⬅️</span>
+              <span>تحريك شمال</span>
+            </button>
 
             <button
               type="button"
-              disabled={isDropping}
-              onClick={handleDropAnimal}
-              className="flex-1 min-h-[74px] rounded-3xl bakasa-btn-green text-white text-xl font-black flex items-center justify-center gap-2 transition-transform active:scale-95 disabled:opacity-50"
+              disabled={turnStage !== 'AIMING'}
+              onClick={rotateAnimal}
+              className="min-h-[58px] rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-95 disabled:opacity-45 border-2 border-amber-200 border-b-4 border-b-amber-700 text-slate-950 font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl transition-transform"
             >
-              <ArrowDownCircle className="w-7 h-7" />
-              <span>{isDropping ? 'بيستقر...' : 'اسقط الحيوان!'}</span>
+              <RotateCw className="w-5 h-5" />
+              <span>تدوير 🔄</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={turnStage !== 'AIMING'}
+              onClick={dropAnimal}
+              className="min-h-[58px] rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 disabled:opacity-45 border-2 border-emerald-200 border-b-4 border-b-emerald-800 text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl transition-transform"
+            >
+              <span className="text-lg leading-none">⬇️</span>
+              <span>إسقاط</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={turnStage !== 'AIMING'}
+              onPointerDown={() => {
+                holdDirRef.current = 1;
+                nudgeAim(1);
+              }}
+              onPointerUp={() => {
+                if (holdDirRef.current === 1) holdDirRef.current = 0;
+              }}
+              onPointerLeave={() => {
+                if (holdDirRef.current === 1) holdDirRef.current = 0;
+              }}
+              onPointerCancel={() => {
+                if (holdDirRef.current === 1) holdDirRef.current = 0;
+              }}
+              className="min-h-[58px] rounded-2xl bg-slate-900/90 hover:bg-slate-800 active:scale-95 disabled:opacity-45 border-2 border-white/30 border-b-4 border-b-black text-white font-black text-xs sm:text-sm flex flex-col items-center justify-center gap-0.5 shadow-xl backdrop-blur-md transition-transform"
+            >
+              <span className="text-lg leading-none">➡️</span>
+              <span>تحريك يمين</span>
             </button>
           </div>
         </div>
       )}
 
+      {phase === 'INTER_ROUND' && (
+        <ArcadeSeriesOverlay
+          players={players}
+          seriesScores={seriesScores}
+          roundDeltas={roundDeltas}
+          roundNum={roundNum}
+          totalRounds={totalRounds}
+          headline={summaryText}
+          durationMs={3000}
+        />
+      )}
+
+      {phase === 'WINNER_SPOTLIGHT' && (
+        <ArcadeWinnerSpotlight
+          winners={seriesWinners}
+          seriesScores={seriesScores}
+          headline={summaryText}
+          onContinueToLeaderboard={() => setPhase('LEADERBOARD')}
+        />
+      )}
+
+      {phase === 'LEADERBOARD' && (
+        <div className="flex-1 flex flex-col pt-4 overflow-y-auto">
+          {onTournamentFinish ? (
+            <LeaderboardScreen
+              players={rawPlayers as Player[]}
+              deltas={finalSeriesDeltas}
+              summaryHeadline={summaryText}
+              isTournamentMode
+              onNewRound={() => {
+                setRoundNum(1);
+                setSeriesScores({});
+                setPhase('SETUP');
+              }}
+              onFinishGame={() => onTournamentFinish(finalSeriesDeltas)}
+            />
+          ) : (
+            <>
+              <div className="w-full max-w-xl mx-auto px-4 pb-2 flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={onExitToArcadeHub}
+                  className="min-h-[44px] px-3 rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 border-b-[#D5C7B2] dark:border-b-[#090F1E] text-sm font-extrabold text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4 rotate-180" />
+                  <span>ألعاب 2D</span>
+                </button>
+                <h1 className="text-2xl font-black text-[#1E293B] dark:text-[#F8FAFC]">نتيجة التحدي</h1>
+                <div className="w-20 flex justify-end">
+                  {goHome && <HomeLogoBadge onClick={goHome} />}
+                </div>
+              </div>
+
+              <ArcadeLeaderboardScreen
+                players={players}
+                deltas={finalSeriesDeltas}
+                summaryHeadline={summaryText}
+                onNewRound={() => {
+                  setRoundNum(1);
+                  setSeriesScores({});
+                  setPhase('SETUP');
+                }}
+                onBackToArcadeHub={onExitToArcadeHub}
+              />
+            </>
+          )}
+        </div>
+      )}
+
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
-        message="جولة برج التوازن شغالة دلوقتي، لو خرجت النتيجة هتتلغي."
+        title="متأكد إنك عايز تخرج من اللعبة؟"
+        message="الجولة لسه شغالة، لو خرجت دلوقتي النتيجة مش هتتحسب."
+        cancelLabel="كمل لعب"
+        confirmLabel="نعم، اخرج"
         onConfirm={() => {
+          disposePhysics();
           setShowExitConfirm(false);
           onExitToArcadeHub();
         }}

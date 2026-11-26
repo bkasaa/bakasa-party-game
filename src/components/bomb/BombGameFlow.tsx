@@ -335,7 +335,8 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
 
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : gameTitle}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 

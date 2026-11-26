@@ -502,6 +502,19 @@ export const CardWatermark: React.FC<CardWatermarkProps> = ({ kind, className = 
           <path d="M10 78 Q30 72 50 78 T90 78 T130 78 T170 78 T210 78 T240 78" fill="none" stroke="white" strokeWidth="1.8" />
         </>
       )}
+
+      {kind === 'khlawis' && (
+        <>
+          {/* Maze walls */}
+          <path d="M18 18 H88 V44 H48 V70 H108" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M126 16 V54 H168 V24 H218 V72 H152" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Flashlight cone */}
+          <polygon points="74,45 128,20 128,70" fill="none" stroke="white" strokeWidth="1.8" strokeDasharray="4 4" />
+          {/* Hidden player circles */}
+          <circle cx="34" cy="56" r="8" fill="none" stroke="white" strokeWidth="2" />
+          <circle cx="196" cy="48" r="8" fill="none" stroke="white" strokeWidth="2" />
+        </>
+      )}
     </svg>
   );
 };

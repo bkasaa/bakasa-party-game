@@ -97,8 +97,8 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
     <div className="min-h-screen flex flex-col">
       <TopBar
         title="محكمة الصحاب"
-        exitVariant="back"
-        exitLabel="رجوع للألعاب"
+        exitVariant="exit"
+        exitLabel="خروج"
         onExit={() => setShowExitConfirm(true)}
       />
 
@@ -246,10 +246,10 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
 
       <ConfirmModal
         open={showExitConfirm}
-        title="الخروج من محكمة الصحاب؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="عايز ترجع لقائمة ألعاب القعدة؟"
         confirmLabel="نعم، اخرج"
-        cancelLabel="كمّل لعب"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

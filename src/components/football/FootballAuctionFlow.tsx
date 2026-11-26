@@ -3,9 +3,11 @@ import { Check, Gavel, HelpCircle, Minus, Plus, RefreshCw, X } from 'lucide-reac
 import { FootballGlobalSettings } from '../../data/footballData';
 import { FOOTBALL_AUCTION_PROMPTS, FootballAuctionPrompt } from '../../data/footballExpandedData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player, RoundDelta } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { ActiveTurnBanner } from '../ActiveTurnBanner';
+import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { TopBar } from '../TopBar';
 import { FootballSettingsBar } from './FootballSettingsBar';
@@ -58,7 +60,11 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
 
   const [deltasMap, setDeltasMap] = useState<Record<string, number>>({});
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const usedPromptIdsRef = useRef<Set<string>>(new Set());
+
+  const isRoundInProgress = phase !== 'READY' && phase !== 'LEADERBOARD';
+  useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
 
   const scopedPrompts = useMemo(() => {
     if (settings.scope === 'both') return FOOTBALL_AUCTION_PROMPTS;
@@ -185,9 +191,12 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title="تحدي المزاد ⚽"
-        exitVariant="back"
-        exitLabel="رجوع"
-        onExit={onExitToHub}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
+        onExit={() => {
+          if (isRoundInProgress) setShowExitConfirm(true);
+          else onExitToHub();
+        }}
       />
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 pb-10 pt-2 flex flex-col items-center">
@@ -464,6 +473,19 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
           />
         )}
       </main>
+
+      <ConfirmModal
+        open={showExitConfirm}
+        title="متأكد إنك عايز تخرج من اللعبة؟"
+        message="المزاد شغال دلوقتي، لو خرجت الجولة هتتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
+        onConfirm={() => {
+          setShowExitConfirm(false);
+          onExitToHub();
+        }}
+        onCancel={() => setShowExitConfirm(false)}
+      />
     </div>
   );
 };

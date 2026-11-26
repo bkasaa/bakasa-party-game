@@ -321,7 +321,8 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title={phase === 'LEADERBOARD' ? 'النتيجة' : 'كلمة السر (كورة) 🔑'}
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={() => {
           if (isRoundInProgress) setShowExitConfirm(true);
           else onExitToHub();
@@ -826,8 +827,10 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="الدور لسه مخلصش، لو خرجت دلوقتي تقدم الجولة الحالية هيتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

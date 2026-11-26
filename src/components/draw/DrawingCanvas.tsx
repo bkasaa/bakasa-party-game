@@ -182,9 +182,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   };
 
   const toolbar = !locked && (
-    <div className={`w-full rounded-2xl qada-card ${isFullscreen ? 'p-2 gap-1.5' : 'p-2.5 gap-2.5'} flex flex-col shrink-0`}>
+    <div className="w-full max-w-[460px] rounded-2xl qada-glass-pill px-2.5 py-2 flex flex-col gap-1.5 shrink-0">
       {/* Row 1: Color Swatches */}
-      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+      <div className="flex items-center justify-between gap-1">
         {COLOR_SWATCHES.map((swatch) => {
           const isActive = selectedColor === swatch.hex;
           return (
@@ -196,22 +196,23 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                 soundManager.play('click');
                 setSelectedColor(swatch.hex);
               }}
-              className={`${isFullscreen ? 'min-w-[32px] min-h-[32px]' : 'min-w-[36px] min-h-[36px]'} flex-1 max-w-[44px] rounded-xl flex items-center justify-center transition-transform ${
-                isActive
-                  ? 'ring-2 ring-[#FF6B4A] ring-offset-2 ring-offset-white dark:ring-offset-[#1E293B] scale-105'
-                  : 'opacity-90 hover:opacity-100'
-              } ${swatch.isEraser ? 'border-2 border-[#CBD5E1] text-[#1E293B]' : 'border border-black/15'}`}
-              style={{ backgroundColor: swatch.hex }}
+              className="min-w-[30px] h-8 flex-1 max-w-[42px] rounded-xl flex items-center justify-center transition-transform"
+              style={{
+                backgroundColor: swatch.hex,
+                border: swatch.isEraser ? '2px solid #CBD5E1' : '1px solid rgba(0,0,0,0.18)',
+                transform: isActive ? 'scale(1.08)' : undefined,
+                boxShadow: isActive ? '0 0 0 2px #FF6B4A' : undefined,
+              }}
             >
-              {swatch.isEraser && <Eraser className="w-4 h-4" />}
+              {swatch.isEraser && <Eraser className="w-3.5 h-3.5 text-[#1E293B]" />}
             </button>
           );
         })}
       </div>
 
       {/* Row 2: Brush sizes + Undo & Clear */}
-      <div className={`flex items-center justify-between gap-2 ${isFullscreen ? 'pt-1.5' : 'pt-2'} border-t border-[#F1E8DA] dark:border-[#334155]`}>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between gap-1.5 pt-1 border-t border-[#F1E8DA]/70 dark:border-[#334155]">
+        <div className="flex items-center gap-1">
           {BRUSH_SIZES.map((b) => {
             const isActive = brushSize === b.size;
             return (
@@ -223,10 +224,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
                   soundManager.play('click');
                   setBrushSize(b.size);
                 }}
-                className={`${isFullscreen ? 'min-w-[38px] min-h-[34px]' : 'min-w-[44px] min-h-[40px]'} rounded-xl flex items-center justify-center transition-colors ${
+                className={`min-w-[36px] min-h-[34px] rounded-xl flex items-center justify-center transition-colors ${
                   isActive
                     ? 'bg-[#14B8A6] text-white shadow-sm'
-                    : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#1E293B] dark:hover:text-white'
+                    : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8]'
                 }`}
               >
                 <span className={`${b.dotClass} rounded-full bg-current`} />
@@ -241,9 +242,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             aria-label="تراجع عن آخر خطوة"
             disabled={strokes.length === 0}
             onClick={handleUndo}
-            className={`${isFullscreen ? 'min-w-[42px] min-h-[34px] px-2.5' : 'min-w-[48px] min-h-[40px] px-3'} rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] hover:bg-[#FFF1DC] dark:hover:bg-[#334155] border border-[#E7DEC8] dark:border-[#334155] disabled:opacity-35 disabled:cursor-not-allowed text-[#1E293B] dark:text-white text-xs font-black flex items-center justify-center gap-1 transition-colors`}
+            className="min-h-[34px] px-2.5 rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] hover:bg-[#FFF1DC] dark:hover:bg-[#334155] border border-[#E7DEC8] dark:border-[#334155] disabled:opacity-35 disabled:cursor-not-allowed text-[#1E293B] dark:text-white text-xs font-black flex items-center justify-center gap-1 transition-colors"
           >
-            <Undo2 className="w-4 h-4" />
+            <Undo2 className="w-3.5 h-3.5" />
             <span>تراجع</span>
           </button>
           <button
@@ -251,9 +252,9 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
             aria-label="مسح اللوحة"
             disabled={strokes.length === 0}
             onClick={handleClear}
-            className={`${isFullscreen ? 'min-w-[38px] min-h-[34px] px-2.5' : 'min-w-[44px] min-h-[40px] px-3'} rounded-xl bg-[#FFF1F2] dark:bg-rose-950/60 hover:bg-[#FFE4E6] border border-[#FECDD3] dark:border-rose-800 disabled:opacity-35 disabled:cursor-not-allowed text-[#E11D48] dark:text-rose-300 text-xs font-black flex items-center justify-center gap-1 transition-colors`}
+            className="min-h-[34px] px-2.5 rounded-xl bg-[#FFF1F2] dark:bg-rose-950/60 hover:bg-[#FFE4E6] border border-[#FECDD3] dark:border-rose-800 disabled:opacity-35 disabled:cursor-not-allowed text-[#E11D48] dark:text-rose-300 text-xs font-black flex items-center justify-center gap-1 transition-colors"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5" />
             <span>مسح</span>
           </button>
         </div>
@@ -330,10 +331,10 @@ export const DrawingCanvas: React.FC<DrawingCanvasProps> = ({
   }
 
   return (
-    <div className="w-full flex flex-col gap-3 items-center">
-      {/* Bright white drawing board */}
+    <div className="w-full flex flex-col gap-2.5 items-center">
+      {/* Maximized bright white drawing board */}
       <div
-        className={`relative w-full max-w-[360px] aspect-[5/6] max-h-[46vh] mx-auto rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
+        className={`relative w-full max-w-[450px] aspect-[5/6] max-h-[58dvh] mx-auto rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
           locked ? 'border-[#F59E0B]' : 'border-[#E7DEC8] dark:border-[#334155]'
         }`}
         style={{ touchAction: 'none', overscrollBehavior: 'none' }}

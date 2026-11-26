@@ -10,7 +10,7 @@ interface ForgerCanvasProps {
 }
 
 const LOGICAL_WIDTH = 800;
-const LOGICAL_HEIGHT = 600;
+const LOGICAL_HEIGHT = 880;
 const FORGER_BRUSH_SIZE = 12;
 
 function drawSingleStroke(ctx: CanvasRenderingContext2D, stroke: DrawStroke) {
@@ -129,7 +129,7 @@ export const ForgerCanvas: React.FC<ForgerCanvasProps> = ({
 
   return (
     <div
-      className={`relative ${maxWidthClass} aspect-[4/3] rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
+      className={`relative ${maxWidthClass} max-w-[460px] mx-auto aspect-[10/11] max-h-[56dvh] rounded-3xl bg-white overflow-hidden shadow-md border-4 transition-colors ${
         canDraw ? 'border-[#E7DEC8] dark:border-[#334155]' : 'border-[#F59E0B]'
       }`}
       style={{ touchAction: 'none', overscrollBehavior: 'none' }}

@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { soundEngine } from './utils/soundEngine';
 import { CustomContentModal } from './components/CustomContentModal';
 import { HomeScreen } from './components/HomeScreen';
 import { MainHubScreen } from './components/MainHubScreen';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { AVATAR_OPTIONS } from './components/PlayerAvatar';
 import { PlayerSetupScreen } from './components/PlayerSetupScreen';
+import { SettingsModal } from './components/SettingsModal';
 import { SplashIntro } from './components/SplashIntro';
 import { ArcadeHubScreen } from './components/arcade/ArcadeHubScreen';
 import { ArcadeSetupScreen } from './components/arcade/ArcadeSetupScreen';
@@ -11,6 +14,7 @@ import { ChickenCatchGame } from './components/arcade/ChickenCatchGame';
 import { BalanceTowerGame } from './components/arcade/BalanceTowerGame';
 import { FrogFlyCatchGame } from './components/arcade/FrogFlyCatchGame';
 import { HappyBirdsGame } from './components/arcade/HappyBirdsGame';
+import { KhlawisGame } from './components/arcade/KhlawisGame';
 import { KnifeHitGame } from './components/arcade/KnifeHitGame';
 import { PaintFightGame } from './components/arcade/PaintFightGame';
 import { RacingGame } from './components/arcade/RacingGame';
@@ -46,6 +50,7 @@ import {
 import {
   AppScreen,
   ArcadeGameId,
+  BannerColor,
   FootballGameId,
   GameId,
   Player,
@@ -64,13 +69,25 @@ function createInitialPlayers(): Player[] {
     if (raw) {
       const parsed = JSON.parse(raw) as Player[];
       if (Array.isArray(parsed) && parsed.length >= 2 && parsed.length <= 20) {
-        return parsed.map((p, idx) => ({
-          id: typeof p.id === 'string' ? p.id : `p_${idx}_${Date.now()}`,
-          name: typeof p.name === 'string' && p.name.trim() ? p.name : `لاعب ${idx + 1}`,
-          score: typeof p.score === 'number' && Number.isFinite(p.score) ? p.score : 0,
-          avatarId: typeof p.avatarId === 'number' ? p.avatarId : idx,
-          color: p.color || PLAYER_COLOR_CYCLE[idx % PLAYER_COLOR_CYCLE.length],
-        }));
+        const usedColors = new Set<BannerColor>();
+        return parsed.map((p, idx) => {
+          let color: BannerColor =
+            p.color && PLAYER_COLOR_CYCLE.includes(p.color)
+              ? p.color
+              : PLAYER_COLOR_CYCLE[idx % PLAYER_COLOR_CYCLE.length];
+          if (usedColors.has(color)) {
+            const available = PLAYER_COLOR_CYCLE.find((c) => !usedColors.has(c));
+            if (available) color = available;
+          }
+          usedColors.add(color);
+          return {
+            id: typeof p.id === 'string' ? p.id : `p_${idx}_${Date.now()}`,
+            name: typeof p.name === 'string' && p.name.trim() ? p.name : `لاعب ${idx + 1}`,
+            score: typeof p.score === 'number' && Number.isFinite(p.score) ? p.score : 0,
+            avatarId: typeof p.avatarId === 'number' ? Math.abs(p.avatarId) % AVATAR_OPTIONS.length : idx % AVATAR_OPTIONS.length,
+            color,
+          };
+        });
       }
     }
   } catch {
@@ -81,7 +98,7 @@ function createInitialPlayers(): Player[] {
     id: `player_${idx + 1}`,
     name,
     score: 0,
-    avatarId: idx,
+    avatarId: idx % AVATAR_OPTIONS.length,
     color: PLAYER_COLOR_CYCLE[idx % PLAYER_COLOR_CYCLE.length],
   }));
 }
@@ -137,8 +154,11 @@ export default function App() {
     DEFAULT_FOOTBALL_SETTINGS
   );
   const [screen, setScreen] = useState<AppScreen>('HOME');
-  const [setupReturnTarget, setSetupReturnTarget] = useState<'HUB' | 'FOOTBALL_HUB' | 'TOURNAMENT_MODE'>('HUB');
+  const [setupReturnTarget, setSetupReturnTarget] = useState<
+    'HUB' | 'FOOTBALL_HUB' | 'TOURNAMENT_MODE' | 'ARCADE_BALANCE' | 'ARCADE_KHLAWIS'
+  >('HUB');
   const [showCustomModal, setShowCustomModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [customTotalCount, setCustomTotalCount] = useState<number>(() => getCustomTotalCount());
 
   const isGameActive =
@@ -149,6 +169,16 @@ export default function App() {
     screen !== 'ARCADE_HUB' &&
     screen !== 'FOOTBALL_HUB';
   useWakeLock(isGameActive);
+
+  const prevScreenRef = useRef<AppScreen>(screen);
+  useEffect(() => {
+    if (prevScreenRef.current !== screen) {
+      prevScreenRef.current = screen;
+      if (soundEngine.timeSinceLastPlay() > 120) {
+        soundEngine.play('whoosh');
+      }
+    }
+  }, [screen]);
 
   useEffect(() => {
     try {
@@ -180,13 +210,17 @@ export default function App() {
       if (prev.length >= 20) return prev;
       const nextIdx = prev.length;
       const usedAvatars = new Set(prev.map((p) => p.avatarId));
-      let avatarId = nextIdx % 10;
-      for (let i = 0; i < 10; i++) {
+      let avatarId = nextIdx % AVATAR_OPTIONS.length;
+      for (let i = 0; i < AVATAR_OPTIONS.length; i++) {
         if (!usedAvatars.has(i)) {
           avatarId = i;
           break;
         }
       }
+      const usedColors = new Set(prev.map((p) => p.color));
+      const uniqueColor =
+        PLAYER_COLOR_CYCLE.find((c) => !usedColors.has(c)) ??
+        PLAYER_COLOR_CYCLE[nextIdx % PLAYER_COLOR_CYCLE.length];
       return [
         ...prev,
         {
@@ -194,7 +228,7 @@ export default function App() {
           name,
           score: 0,
           avatarId,
-          color: PLAYER_COLOR_CYCLE[nextIdx % PLAYER_COLOR_CYCLE.length],
+          color: uniqueColor,
         },
       ];
     });
@@ -202,6 +236,19 @@ export default function App() {
 
   const handleUpdatePlayerName = (id: string, name: string) => {
     setPlayers((prev) => prev.map((p) => (p.id === id ? { ...p, name } : p)));
+  };
+
+  const handleUpdatePlayerAppearance = (id: string, avatarId: number, color: BannerColor) => {
+    setPlayers((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (!target) return prev;
+      const oldColor = target.color;
+      return prev.map((p) => {
+        if (p.id === id) return { ...p, avatarId, color };
+        if (color !== oldColor && p.color === color) return { ...p, color: oldColor };
+        return p;
+      });
+    });
   };
 
   const handleRemovePlayer = (id: string) => {
@@ -287,6 +334,7 @@ export default function App() {
     else if (gameId === 'soccer') setScreen('ARCADE_SOCCER');
     else if (gameId === 'stickman') setScreen('ARCADE_STICKMAN');
     else if (gameId === 'balance') setScreen('ARCADE_BALANCE');
+    else if (gameId === 'khlawis') setScreen('ARCADE_KHLAWIS');
   };
 
   const handleSelectFootballGame = (gameId: FootballGameId) => {
@@ -303,10 +351,14 @@ export default function App() {
   const activeArcadePlayers = arcadePlayers.slice(0, arcadeCount);
 
   return (
-    <HomeNavigationProvider onGoHome={() => setScreen('HOME')}>
+    <HomeNavigationProvider
+      onGoHome={() => setScreen('HOME')}
+      onOpenSettings={() => setShowSettingsModal(true)}
+    >
       <div dir="rtl" className="min-h-screen w-full bakasa-bg text-[#1E293B] dark:text-[#F8FAFC] overflow-x-hidden">
         {showSplash && <SplashIntro onComplete={() => setShowSplash(false)} />}
 
+        <div key={screen} className="animate-screen-in min-h-screen w-full">
       {screen === 'HOME' && (
         <HomeScreen
           playerCount={players.length}
@@ -320,6 +372,7 @@ export default function App() {
           onStartFootball={() => setScreen('FOOTBALL_HUB')}
           onStartTournament={() => setScreen('TOURNAMENT_MODE')}
           onOpenCustomContent={() => setShowCustomModal(true)}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
       )}
 
@@ -328,6 +381,7 @@ export default function App() {
           players={players}
           onAddPlayer={handleAddPlayer}
           onUpdatePlayerName={handleUpdatePlayerName}
+          onUpdatePlayerAppearance={handleUpdatePlayerAppearance}
           onRemovePlayer={handleRemovePlayer}
           onResetScores={handleResetScores}
           onContinue={() => setScreen(setupReturnTarget)}
@@ -337,7 +391,11 @@ export default function App() {
                 ? 'FOOTBALL_HUB'
                 : setupReturnTarget === 'TOURNAMENT_MODE'
                   ? 'TOURNAMENT_MODE'
-                  : 'HOME'
+                  : setupReturnTarget === 'ARCADE_BALANCE'
+                    ? 'ARCADE_BALANCE'
+                    : setupReturnTarget === 'ARCADE_KHLAWIS'
+                      ? 'ARCADE_KHLAWIS'
+                      : 'HOME'
             )
           }
         />
@@ -502,6 +560,22 @@ export default function App() {
           players={players}
           onApplyDeltas={handleApplyDeltas}
           onExitToArcadeHub={() => setScreen('ARCADE_HUB')}
+          onEditPlayers={() => {
+            setSetupReturnTarget('ARCADE_BALANCE');
+            setScreen('SETUP');
+          }}
+        />
+      )}
+
+      {screen === 'ARCADE_KHLAWIS' && (
+        <KhlawisGame
+          players={players}
+          onApplyDeltas={handleApplyDeltas}
+          onExitToArcadeHub={() => setScreen('ARCADE_HUB')}
+          onEditPlayers={() => {
+            setSetupReturnTarget('ARCADE_KHLAWIS');
+            setScreen('SETUP');
+          }}
         />
       )}
 
@@ -611,12 +685,22 @@ export default function App() {
           onExitToHome={() => setScreen('HOME')}
         />
       )}
+        </div>
 
       <CustomContentModal
         open={showCustomModal}
         onClose={() => {
           setShowCustomModal(false);
           setCustomTotalCount(getCustomTotalCount());
+        }}
+      />
+
+      <SettingsModal
+        open={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        onOpenPlayerSetup={() => {
+          setSetupReturnTarget('HUB');
+          setScreen('SETUP');
         }}
       />
 

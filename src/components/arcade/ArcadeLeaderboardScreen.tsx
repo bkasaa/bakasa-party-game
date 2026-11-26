@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, Check, Copy, Trophy } from 'lucide-react';
+import { Camera, Check, Trophy } from 'lucide-react';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import {
   ARCADE_COLOR_ORDER,
@@ -8,7 +8,7 @@ import {
   ArcadePlayer,
 } from '../../types/arcade';
 import { getScoreboardRankMap } from '../../utils/scoreboardMood';
-import { computeArcadeTitles, copyTextToClipboard } from '../../utils/sessionStats';
+import { computeArcadeTitles } from '../../utils/sessionStats';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { shareStoryCardImage } from '../../utils/storyCardShare';
 import { LoserPunishmentCard } from '../LoserPunishmentCard';
@@ -33,15 +33,8 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
   onBackToArcadeHub,
 }) => {
   const guard = useTapGuard(400);
-  const [copied, setCopied] = useState<boolean>(false);
   const [selectedDare, setSelectedDare] = useState<string | null>(null);
   const [storyStatus, setStoryStatus] = useState<'idle' | 'sharing' | 'done'>('idle');
-
-  useEffect(() => {
-    if (!copied) return;
-    const t = window.setTimeout(() => setCopied(false), 2200);
-    return () => window.clearTimeout(t);
-  }, [copied]);
 
   useEffect(() => {
     if (storyStatus !== 'done') return;
@@ -57,28 +50,6 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
   });
 
   const arcadeTitles = computeArcadeTitles(sortedPlayers);
-
-  const handleCopySummary = async () => {
-    const medals = ['🥇', '🥈', '🥉'];
-    const lines: string[] = ['🏆 *نتائج قعدة الشلة (تحدي 2D)* 🏆'];
-    if (summaryHeadline) {
-      lines.push(`🏆 ${summaryHeadline}`);
-    }
-    lines.push('');
-    sortedPlayers.forEach((p, idx) => {
-      const rankMark = medals[idx] ?? `${idx + 1}.`;
-      const title = arcadeTitles[p.id] ? ` (${arcadeTitles[p.id]})` : '';
-      lines.push(`${rankMark} ${p.name}: ${p.score} نقطة${title}`);
-    });
-    const ok = await copyTextToClipboard(lines.join('\n'));
-    if (ok) {
-      soundManager.play('click');
-      triggerHaptic(25);
-      setCopied(true);
-    } else {
-      soundManager.play('error');
-    }
-  };
 
   const hasAnyPositiveDelta = deltas.some((d) => d.delta > 0);
   const hasDistinctLoser =
@@ -231,26 +202,6 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
             <>
               <Camera className="w-4 h-4" />
               <span>{storyStatus === 'sharing' ? 'جاري تجهيز الصورة...' : 'صور النتيجة للستوري 📸'}</span>
-            </>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={handleCopySummary}
-          className="w-full min-h-[48px] rounded-2xl bg-white dark:bg-[#1E293B] hover:bg-[#FFF5E8] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] border-b-4 border-b-[#D5C7B2] dark:border-b-[#090F1E] text-[#1E293B] dark:text-[#F8FAFC] text-sm font-black flex items-center justify-center gap-2 transition-colors"
-        >
-          {copied ? (
-            <>
-              <Check className="w-4 h-4 text-[#059669] dark:text-[#34D399]" />
-              <span className="text-[#059669] dark:text-[#34D399]">
-                تم النسخ! ابعتها على الواتساب
-              </span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-4 h-4 text-[#D97706] dark:text-[#FBBF24]" />
-              <span>نسخ النتيجة للمشاركة 📋</span>
             </>
           )}
         </button>

@@ -95,20 +95,13 @@ const CHICKEN_POOL = 20;
 const MAX_CARRY = 2;
 const DEFAULT_MATCH_SECONDS = 45;
 const PLAYER_SPEED = 205;
-const JOYSTICK_MAX_R = 26;
+const JOYSTICK_MAX_R = 36;
 
-const SLOT_QUADRANT_POS: Record<CornerSlot, string> = {
-  'top-left': 'top-0 left-0',
-  'top-right': 'top-0 right-0',
-  'bottom-left': 'bottom-0 left-0',
-  'bottom-right': 'bottom-0 right-0',
-};
-
-const SLOT_REST_ANCHOR: Record<CornerSlot, string> = {
-  'top-left': 'top-3 left-3',
-  'top-right': 'top-3 right-3',
-  'bottom-left': 'bottom-3 left-3',
-  'bottom-right': 'bottom-3 right-3',
+const SLOT_CORNER_POS: Record<CornerSlot, string> = {
+  'top-left': 'top-4 left-4',
+  'top-right': 'top-4 right-4',
+  'bottom-left': 'bottom-4 left-4',
+  'bottom-right': 'bottom-4 right-4',
 };
 
 function computePenRect(slot: CornerSlot, w: number, h: number): PenRect {
@@ -996,14 +989,8 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [phase, matchSeconds, drawScene, finishRound]);
 
-  // Ultra-Responsive Floating Multi-Touch 360° Joystick Handlers
-  const updateJoy = (
-    playerIdx: number,
-    rawDx: number,
-    rawDy: number,
-    spawnX: number,
-    spawnY: number
-  ) => {
+  // Strictly Fixed-Base Multi-Touch 360° Joystick Handlers
+  const updateJoy = (playerIdx: number, rawDx: number, rawDy: number) => {
     const dist = Math.hypot(rawDx, rawDy);
     const active = dist > 0.5;
     const clampedDist = Math.min(JOYSTICK_MAX_R, dist);
@@ -1029,57 +1016,61 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
 
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
-        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: spawnX, y: spawnY } : item
+        idx === playerIdx ? { kx: nx, ky: ny, active: true, x: null, y: null } : item
       )
     );
   };
 
   const handleJoyDown = (e: React.PointerEvent<HTMLDivElement>, playerIdx: number) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore synthetic capture failures
+    }
     soundManager.unlock();
     triggerHaptic(15);
     const rect = e.currentTarget.getBoundingClientRect();
-    const localX = Math.max(41, Math.min(rect.width - 41, e.clientX - rect.left));
-    const localY = Math.max(41, Math.min(rect.height - 41, e.clientY - rect.top));
-    const cx = rect.left + localX;
-    const cy = rect.top + localY;
-    joyPointersRef.current.set(e.pointerId, { playerIdx, cx, cy, x: localX, y: localY, rect });
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    joyPointersRef.current.set(e.pointerId, {
+      playerIdx,
+      cx,
+      cy,
+      x: rect.width / 2,
+      y: rect.height / 2,
+      rect,
+    });
     const rawDx = e.clientX - cx;
     const rawDy = e.clientY - cy;
     lastJoyHapticRef.current[playerIdx] = {
       angle: Math.hypot(rawDx, rawDy) > 1 ? Math.atan2(rawDy, rawDx) : 0,
       time: performance.now(),
     };
-    updateJoy(playerIdx, rawDx, rawDy, localX, localY);
+    updateJoy(playerIdx, rawDx, rawDy);
   };
 
   const handleJoyMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
+    e.preventDefault();
     const rawDx = e.clientX - entry.cx;
     const rawDy = e.clientY - entry.cy;
-    const dist = Math.hypot(rawDx, rawDy);
-    const elasticLimit = JOYSTICK_MAX_R * 1.45;
-    if (dist > elasticLimit) {
-      const excess = dist - elasticLimit;
-      const dirX = rawDx / dist;
-      const dirY = rawDy / dist;
-      const candidateCx = entry.cx + dirX * excess * 0.5;
-      const candidateCy = entry.cy + dirY * excess * 0.5;
-      const localX = Math.max(41, Math.min(entry.rect.width - 41, candidateCx - entry.rect.left));
-      const localY = Math.max(41, Math.min(entry.rect.height - 41, candidateCy - entry.rect.top));
-      entry.cx = entry.rect.left + localX;
-      entry.cy = entry.rect.top + localY;
-      entry.x = localX;
-      entry.y = localY;
-    }
-    updateJoy(entry.playerIdx, e.clientX - entry.cx, e.clientY - entry.cy, entry.x, entry.y);
+    updateJoy(entry.playerIdx, rawDx, rawDy);
   };
 
   const handleJoyUp = (e: React.PointerEvent<HTMLDivElement>) => {
     const entry = joyPointersRef.current.get(e.pointerId);
     if (!entry) return;
     joyPointersRef.current.delete(e.pointerId);
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
     joyVectorsRef.current[entry.playerIdx] = { dx: 0, dy: 0, active: false };
     setJoyVisuals((prev) =>
       prev.map((item, idx) =>
@@ -1155,7 +1146,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
             </div>
           )}
 
-          {/* Compact Floating 360° Corner Joysticks */}
+          {/* Strictly Fixed Base 360° Corner Joysticks */}
           {players.map((player, idx) => {
             const placement = placements[idx];
             const theme = ARCADE_COLORS[player.colorId];
@@ -1163,7 +1154,6 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
             const jv = joyVisuals[idx] ?? { kx: 0, ky: 0, active: false, x: null, y: null };
             const cap = capturedCounts[idx] ?? 0;
             const car = carryingCounts[idx] ?? 0;
-            const isFloating = jv.x !== null && jv.y !== null;
 
             return (
               <div
@@ -1174,28 +1164,19 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                 onPointerUp={handleJoyUp}
                 onPointerCancel={handleJoyUp}
                 onLostPointerCapture={handleJoyUp}
-                className={`absolute ${SLOT_QUADRANT_POS[placement.slot]} z-20 w-[38vw] max-w-[162px] h-[30dvh] max-h-[188px] cursor-pointer select-none`}
+                className={`absolute ${SLOT_CORNER_POS[placement.slot]} z-20 w-[106px] h-[106px] rounded-full cursor-pointer select-none flex items-center justify-center`}
               >
                 <div
                   style={{
                     borderColor: theme.hex,
                     backgroundColor: jv.active
-                      ? 'rgba(15, 23, 42, 0.42)'
-                      : 'rgba(15, 23, 42, 0.26)',
-                    ...(isFloating
-                      ? {
-                          left: jv.x!,
-                          top: jv.y!,
-                          transform: 'translate(-50%, -50%)',
-                        }
-                      : {}),
+                      ? 'rgba(15, 23, 42, 0.44)'
+                      : 'rgba(15, 23, 42, 0.28)',
                   }}
-                  className={`pointer-events-none absolute ${
-                    isFloating ? '' : SLOT_REST_ANCHOR[placement.slot]
-                  } w-[82px] h-[82px] rounded-full border-3 backdrop-blur-[1px] shadow-lg flex items-center justify-center`}
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
-                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/65 text-[10px] font-black text-white truncate max-w-[86px] tabular-nums ${
+                    className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/70 text-[10px] font-black text-white truncate max-w-[100px] tabular-nums ${
                       placement.isTop ? 'rotate-180 -bottom-5 top-auto' : ''
                     }`}
                   >
@@ -1205,9 +1186,9 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                   <div
                     style={{
                       backgroundColor: theme.hex,
-                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.1 : 1})`,
+                      transform: `translate3d(${jv.kx * JOYSTICK_MAX_R}px, ${jv.ky * JOYSTICK_MAX_R}px, 0) scale(${jv.active ? 1.08 : 1})`,
                     }}
-                    className={`pointer-events-none w-9 h-9 rounded-full border-3 border-[#111827] shadow-[0_3px_0_#111827] ${
+                    className={`pointer-events-none w-10 h-10 rounded-full border-[3px] border-[#111827] shadow-[0_3px_0_#111827] ${
                       jv.active ? '' : 'transition-transform duration-150'
                     }`}
                   />

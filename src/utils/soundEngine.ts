@@ -130,6 +130,10 @@ class SoundEngine {
     window.addEventListener('click', handleButtonClick, { capture: false, passive: true });
   }
 
+  public timeSinceLastPlay(): number {
+    return performance.now() - this.lastPlayAt;
+  }
+
   public registerAudioAssets(urls: Partial<Record<SoundKey, string>>): void {
     this.customUrls = { ...this.customUrls, ...urls };
     Object.entries(urls).forEach(([key, src]) => {

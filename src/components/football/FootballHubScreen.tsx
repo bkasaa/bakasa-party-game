@@ -1,15 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
-  Dices,
-  EyeOff,
-  Gavel,
-  Goal,
-  Grid3X3,
-  KeyRound,
-  ListChecks,
-  Mic,
-  Shirt,
   Trophy,
   Users,
 } from 'lucide-react';
@@ -20,6 +11,12 @@ import { FootballGameId, Player } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { CardWatermark } from '../CardWatermark';
 import { PlayerAvatar } from '../PlayerAvatar';
+import {
+  RichDiceIcon,
+  RichFootballGameIcon,
+  RichFootballHubIcon,
+  RichIconBadge,
+} from '../RichGameIcons';
 import { TopBar } from '../TopBar';
 import { FootballSettingsBar } from './FootballSettingsBar';
 
@@ -38,24 +35,24 @@ function toArabicDigits(num: number): string {
   return String(num).replace(/\d/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
 }
 
-function getFootballGameIcon(id: FootballGameId) {
+function getFootballToneGradient(id: FootballGameId): string {
   switch (id) {
     case 'football_spy':
-      return EyeOff;
+      return 'from-[#4c1d95] via-[#9d174d] to-[#be185d]';
     case 'football_password':
-      return KeyRound;
+      return 'from-[#78350f] via-[#d97706] to-[#f59e0b]';
     case 'football_chain':
-      return Shirt;
+      return 'from-[#1e3a8a] via-[#2563eb] to-[#38bdf8]';
     case 'football_three':
-      return ListChecks;
+      return 'from-[#065f46] via-[#10b981] to-[#34d399]';
     case 'football_charades':
-      return Mic;
+      return 'from-[#831843] via-[#db2777] to-[#f472b6]';
     case 'football_penalty':
-      return Goal;
+      return 'from-[#064e3b] via-[#16a34a] to-[#22c55e]';
     case 'football_auction':
-      return Gavel;
+      return 'from-[#9a3412] via-[#ea580c] to-[#f97316]';
     case 'football_tictactoe':
-      return Grid3X3;
+      return 'from-[#312e81] via-[#4f46e5] to-[#6366f1]';
   }
 }
 
@@ -133,7 +130,8 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
       <TopBar
         title="قعدة اللاعيبة ⚽"
         exitVariant="back"
-        exitLabel="الرئيسية"
+        exitLabel="رجوع"
+        showSettingsButton
         onExit={onBackToHome}
       />
 
@@ -165,9 +163,9 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
                 {toArabicDigits(FOOTBALL_GAMES.length)} تحديات كورة جماعية بتشتغل ١٠٠٪ أوفلاين بنفس أسماء الشلة
               </p>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center text-2xl shrink-0">
-              <span className="animate-icon-float inline-block">⚽</span>
-            </div>
+            <RichIconBadge tone="emerald" size="md" floatDelay={0.2}>
+              <RichFootballHubIcon className="w-8 h-8" />
+            </RichIconBadge>
           </div>
         </section>
 
@@ -231,26 +229,30 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
           onClick={handleRandomPick}
           className="mb-5 w-full min-h-[54px] rounded-2xl qada-btn-amber px-4 py-2.5 flex items-center justify-center gap-2.5 text-[#1E293B] font-black text-base sm:text-lg transition-transform active:scale-95 disabled:opacity-85"
         >
-          <Dices className={`w-5 h-5 shrink-0 ${isSpinning ? 'animate-spin' : ''}`} />
+          <RichDiceIcon className={`w-6 h-6 shrink-0 ${isSpinning ? 'animate-spin' : ''}`} />
           <span>{isSpinning ? 'بنختار تحدي كروي...' : '🎲 فاجئنا! (تحدي كروي عشوائي)'}</span>
         </button>
 
-        {/* 6 Football Party Mini-Games */}
-        <div className="flex flex-col gap-4">
+        {/* 8 Football Party Mini-Games in Asymmetrical Liquid Glass Bento Grid */}
+        <div className="grid grid-cols-2 gap-3.5">
           {FOOTBALL_GAMES.map((game, idx) => {
             const style = BANNER_COLOR_CLASSES[game.color];
-            const Icon = getFootballGameIcon(game.id);
             const isHighlighted = rouletteId === game.id;
+            const isFeatured = idx === 0 || idx === FOOTBALL_GAMES.length - 1;
             return (
               <div
                 key={game.id}
-                className="animate-card-float"
-                style={{ animationDelay: `${idx * 0.45}s` }}
+                className={`animate-card-float ${isFeatured ? 'col-span-2' : 'h-full'}`}
+                style={{ animationDelay: `${idx * 0.35}s` }}
               >
                 <button
                   type="button"
                   onClick={() => handleCardTap(game.id)}
-                  className={`group relative overflow-hidden w-full min-h-[82px] rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card px-4 py-3.5 flex items-center justify-between gap-3 text-right hover:brightness-105 ${
+                  className={`group relative overflow-hidden w-full h-full ${
+                    isFeatured
+                      ? 'min-h-[86px] px-4 py-3.5 flex items-center justify-between gap-3'
+                      : 'min-h-[154px] p-3.5 flex flex-col justify-between gap-2'
+                  } rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card text-right hover:brightness-105 ${
                     isHighlighted
                       ? 'ring-4 ring-[#F59E0B] scale-[1.03] brightness-110'
                       : isSpinning
@@ -265,31 +267,54 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
                     style={{ animationDelay: `${idx * 0.7}s` }}
                   />
 
-                  <div className="relative flex items-center gap-3.5 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-white/20 border border-white/30 backdrop-blur-sm flex items-center justify-center shrink-0 shadow-inner">
-                      <div
-                        className="animate-icon-float flex items-center justify-center"
-                        style={{ animationDelay: `${idx * 0.35}s` }}
-                      >
-                        <Icon className="w-6 h-6 text-white" />
+                  {isFeatured ? (
+                    <>
+                      <div className="relative flex items-center gap-3.5 min-w-0">
+                        <RichIconBadge
+                          gradientClass={getFootballToneGradient(game.id)}
+                          size="md"
+                          floatDelay={idx * 0.35}
+                        >
+                          <RichFootballGameIcon id={game.id} className="w-8 h-8" />
+                        </RichIconBadge>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-lg sm:text-xl font-black text-white truncate">
+                              {game.title}
+                            </span>
+                            <span className="text-xs font-black text-white/85 tabular-nums shrink-0">
+                              · {game.badgeText}
+                            </span>
+                          </div>
+                          <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
+                            {game.subtitle}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-lg sm:text-xl font-black text-white truncate">
+                      <ChevronLeft className="relative w-6 h-6 text-white/95 shrink-0 transition-transform group-hover:-translate-x-1" />
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative flex items-start justify-between gap-2 w-full">
+                        <RichIconBadge
+                          gradientClass={getFootballToneGradient(game.id)}
+                          size="md"
+                          floatDelay={idx * 0.3}
+                        >
+                          <RichFootballGameIcon id={game.id} className="w-7 h-7" />
+                        </RichIconBadge>
+                        <ChevronLeft className="w-5 h-5 text-white/90 shrink-0 mt-1 transition-transform group-hover:-translate-x-1" />
+                      </div>
+                      <div className="relative min-w-0">
+                        <div className="text-base sm:text-lg font-black text-white leading-tight truncate">
                           {game.title}
-                        </span>
-                        <span className="text-xs font-black text-white/85 tabular-nums shrink-0">
-                          · {game.badgeText}
-                        </span>
+                        </div>
+                        <p className="text-[11px] sm:text-xs font-bold text-white/90 line-clamp-2 mt-1 leading-snug">
+                          {game.subtitle}
+                        </p>
                       </div>
-                      <p className="text-xs sm:text-sm font-bold text-white/90 truncate mt-0.5">
-                        {game.subtitle}
-                      </p>
-                    </div>
-                  </div>
-
-                  <ChevronLeft className="relative w-6 h-6 text-white/95 shrink-0 transition-transform group-hover:-translate-x-1" />
+                    </>
+                  )}
                 </button>
               </div>
             );

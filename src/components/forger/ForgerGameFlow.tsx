@@ -305,7 +305,8 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
                 ? 'النتيجة'
                 : 'المزور'
         }
-        exitVariant={isRoundInProgress ? 'home' : 'back'}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
       />
 
@@ -933,8 +934,10 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
 
       <ConfirmModal
         open={showExitConfirm}
-        title="هل أنت متأكد من الخروج؟"
+        title="متأكد إنك عايز تخرج من اللعبة؟"
         message="جولة المزور لسه مخلصتش، لو خرجت دلوقتي تقدم الجولة الحالية هيتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
         onConfirm={() => {
           setShowExitConfirm(false);
           onExitToHub();

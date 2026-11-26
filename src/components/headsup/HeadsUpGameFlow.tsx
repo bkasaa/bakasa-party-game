@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Compass, Play, RotateCw, SkipForward, Sparkles, Timer } from 'lucide-react';
+import { Check, Compass, LogOut, Play, RotateCw, SkipForward, Sparkles, Timer } from 'lucide-react';
 import { HEADSUP_CATEGORIES } from '../../data/headsUpData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
+import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { CategoryBank, Player, RoundDelta } from '../../types/game';
 import { getCustomContent } from '../../utils/customContentStorage';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { ActiveTurnBanner } from '../ActiveTurnBanner';
 import { CategoryFilterBar } from '../CategoryFilterBar';
+import { ConfirmModal } from '../ConfirmModal';
 import { LeaderboardScreen } from '../LeaderboardScreen';
 import { TopBar } from '../TopBar';
 
@@ -55,14 +57,24 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
 
   // Gyroscope tilt state
   const [gyroSupported, setGyroSupported] = useState<boolean>(false);
+  const [gyroEnabled, setGyroEnabled] = useState<boolean>(true);
   const [gyroPermissionState, setGyroPermissionState] = useState<
     'unknown' | 'needs_prompt' | 'granted' | 'denied'
   >('unknown');
+  const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
+  const baselineSamplesRef = useRef<number[]>([]);
   const baselineAngleRef = useRef<number | null>(null);
   const lastTiltActionAtRef = useRef<number>(0);
   const tiltNeutralReadyRef = useRef<boolean>(true);
   const usedWordsRef = useRef<Set<string>>(new Set());
   const flashTimerRef = useRef<number | null>(null);
+
+  const isRoundInProgress =
+    phase === 'PASS_PLAYER' || phase === 'ACTIVE_FOREHEAD' || phase === 'TURN_SUMMARY';
+
+  useNavigationGuard(isRoundInProgress, () => {
+    setShowExitConfirm(true);
+  });
 
   const availableCategories = useMemo<CategoryBank[]>(() => {
     const custom = getCustomContent();
@@ -191,9 +203,10 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
     setTurnLogs([]);
     setTimeLeft(durationSec);
     setFlashState('none');
+    baselineSamplesRef.current = [];
     baselineAngleRef.current = null;
     tiltNeutralReadyRef.current = true;
-    lastTiltActionAtRef.current = Date.now() + 600;
+    lastTiltActionAtRef.current = Date.now() + 650;
     setPhase('ACTIVE_FOREHEAD');
   });
 
@@ -253,33 +266,44 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
   }, [phase, timeLeft]);
 
   // Gyroscope DeviceOrientation tilt controls during ACTIVE_FOREHEAD
+  // Uses orientation-invariant screen normal projection nz = cos(beta) * cos(gamma)
+  // so nodding down (screen faces floor -> negative) = Correct, and tilting up = Skip
   useEffect(() => {
-    if (phase !== 'ACTIVE_FOREHEAD' || !gyroSupported || gyroPermissionState !== 'granted') {
+    if (
+      phase !== 'ACTIVE_FOREHEAD' ||
+      !gyroSupported ||
+      !gyroEnabled ||
+      gyroPermissionState !== 'granted'
+    ) {
       return;
     }
 
-    const handleOrientation = (e: DeviceOrientationEvent) => {
-      if (e.beta === null && e.gamma === null) return;
-      const screenAngle =
-        typeof window.screen?.orientation?.angle === 'number'
-          ? window.screen.orientation.angle
-          : typeof (window as unknown as { orientation?: number }).orientation === 'number'
-            ? (window as unknown as { orientation?: number }).orientation ?? 0
-            : 0;
+    const computePitchDeg = (beta: number, gamma: number): number => {
+      const bRad = (beta * Math.PI) / 180;
+      const gRad = (gamma * Math.PI) / 180;
+      const nz = Math.max(-1, Math.min(1, Math.cos(bRad) * Math.cos(gRad)));
+      return (Math.asin(nz) * 180) / Math.PI;
+    };
 
-      // In landscape, gamma reflects forehead pitch; in portrait, beta reflects pitch
-      const isLandscape = Math.abs(screenAngle) === 90;
-      const rawPitch = isLandscape ? (e.gamma ?? 0) : (e.beta ?? 0);
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (e.beta === null || e.gamma === null) return;
+      const pitchDeg = computePitchDeg(e.beta, e.gamma);
 
       if (baselineAngleRef.current === null) {
-        baselineAngleRef.current = rawPitch;
+        baselineSamplesRef.current.push(pitchDeg);
+        if (baselineSamplesRef.current.length >= 3) {
+          const avg =
+            baselineSamplesRef.current.reduce((s, v) => s + v, 0) /
+            baselineSamplesRef.current.length;
+          baselineAngleRef.current = avg;
+        }
         return;
       }
 
-      const delta = rawPitch - baselineAngleRef.current;
+      const delta = pitchDeg - baselineAngleRef.current;
       const now = Date.now();
 
-      if (Math.abs(delta) < 14) {
+      if (Math.abs(delta) < 10) {
         tiltNeutralReadyRef.current = true;
         return;
       }
@@ -288,21 +312,31 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
         return;
       }
 
-      // Forward/downward nod -> correct, upward/backward nod -> skip
-      if (delta > 26) {
+      // Forward/downward nod (nz becomes negative -> delta < -22°) -> correct
+      // Upward/backward nod (nz becomes positive -> delta > +22°) -> skip
+      if (delta <= -22) {
         tiltNeutralReadyRef.current = false;
         lastTiltActionAtRef.current = now;
         advanceCard('correct');
-      } else if (delta < -26) {
+      } else if (delta >= 22) {
         tiltNeutralReadyRef.current = false;
         lastTiltActionAtRef.current = now;
         advanceCard('skip');
       }
     };
 
+    const resetCalibration = () => {
+      baselineSamplesRef.current = [];
+      baselineAngleRef.current = null;
+    };
+
     window.addEventListener('deviceorientation', handleOrientation);
-    return () => window.removeEventListener('deviceorientation', handleOrientation);
-  }, [phase, gyroSupported, gyroPermissionState, advanceCard]);
+    window.addEventListener('orientationchange', resetCalibration);
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('orientationchange', resetCalibration);
+    };
+  }, [phase, gyroSupported, gyroEnabled, gyroPermissionState, advanceCard]);
 
   const handleConfirmTurnAndAdvance = guard(() => {
     soundManager.play('next');
@@ -343,135 +377,189 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
           : 'bg-[#131C31]';
 
     return (
-      <div
-        className={`fixed inset-0 z-50 flex flex-col justify-between ${bgClass} text-white transition-colors duration-200 p-3 sm:p-5 select-none touch-none`}
-      >
-        {/* Top Bar with Pinned Active Player + Timer + Controls */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 px-3 py-1.5">
-            <span className="text-xs font-extrabold text-white/80">اللي بيمثل:</span>
-            <span className="text-sm sm:text-base font-black text-amber-300">
-              {currentPlayer.name}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div
-              className={`rounded-2xl px-3.5 py-1.5 font-black text-base sm:text-lg tabular-nums border ${
-                timeLeft <= 8
-                  ? 'bg-rose-600 border-rose-300 animate-pulse'
-                  : 'bg-white/15 border-white/25'
-              }`}
-            >
-              ⏱ {timeLeft}ث
-            </div>
-            <div className="rounded-2xl bg-emerald-500/25 border border-emerald-300/50 px-3 py-1.5 text-sm font-black tabular-nums">
-              ✅ {correctSoFar}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            {gyroSupported && gyroPermissionState === 'granted' && (
+      <>
+        <div
+          className={`fixed inset-0 z-50 flex flex-col justify-between ${bgClass} text-white transition-colors duration-200 p-3 sm:p-5 select-none touch-none`}
+        >
+          {/* Top Bar with Pinned Active Player + Timer + Sensor Toggle & Exit */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  baselineAngleRef.current = null;
                   soundManager.play('click');
+                  setShowExitConfirm(true);
+                }}
+                className="min-h-[38px] px-3 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-300/60 text-xs font-black flex items-center gap-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>خروج</span>
+              </button>
+
+              <div className="flex items-center gap-2 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 px-3 py-1.5">
+                <span className="text-xs font-extrabold text-white/80">اللي بيمثل:</span>
+                <span className="text-sm sm:text-base font-black text-amber-300">
+                  {currentPlayer.name}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div
+                className={`rounded-2xl px-3.5 py-1.5 font-black text-base sm:text-lg tabular-nums border ${
+                  timeLeft <= 8
+                    ? 'bg-rose-600 border-rose-300 animate-pulse'
+                    : 'bg-white/15 border-white/25'
+                }`}
+              >
+                ⏱ {timeLeft}ث
+              </div>
+              <div className="rounded-2xl bg-emerald-500/25 border border-emerald-300/50 px-3 py-1.5 text-sm font-black tabular-nums">
+                ✅ {correctSoFar}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {gyroSupported && gyroPermissionState === 'granted' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundManager.play('click');
+                      setGyroEnabled((prev) => {
+                        const next = !prev;
+                        if (next) {
+                          baselineSamplesRef.current = [];
+                          baselineAngleRef.current = null;
+                        }
+                        return next;
+                      });
+                    }}
+                    className={`min-h-[36px] px-2.5 rounded-xl text-xs font-black flex items-center gap-1 border transition-colors ${
+                      gyroEnabled
+                        ? 'bg-emerald-500/30 border-emerald-300/60 text-emerald-100'
+                        : 'bg-white/10 border-white/20 text-white/75'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>المستشعار: {gyroEnabled ? 'شغال' : 'مقفول'}</span>
+                  </button>
+                  {gyroEnabled && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        baselineSamplesRef.current = [];
+                        baselineAngleRef.current = null;
+                        soundManager.play('click');
+                      }}
+                      className="min-h-[36px] px-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-black"
+                    >
+                      معايرة
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  soundManager.play('click');
+                  setLandscapeCard((v) => !v);
                 }}
                 className="min-h-[36px] px-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-black flex items-center gap-1"
-                title="إعادة معايرة الميلان"
+                title="تدوير الكارت"
               >
-                <Compass className="w-3.5 h-3.5" />
-                <span>معايرة</span>
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>تدوير</span>
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                soundManager.play('click');
-                setLandscapeCard((v) => !v);
-              }}
-              className="min-h-[36px] px-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-black flex items-center gap-1"
-              title="تدوير الكارت"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              <span>تدوير</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                soundManager.play('click');
-                setPhase('TURN_SUMMARY');
-              }}
-              className="min-h-[36px] px-3 rounded-xl bg-rose-500/80 hover:bg-rose-500 text-xs font-black"
-            >
-              إنهاء
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  soundManager.play('click');
+                  setPhase('TURN_SUMMARY');
+                }}
+                className="min-h-[36px] px-3 rounded-xl bg-amber-500/85 hover:bg-amber-400 text-slate-950 text-xs font-black"
+              >
+                إنهاء الدور
+              </button>
+            </div>
           </div>
-        </div>
 
-        {/* Countdown Progress Bar */}
-        <div className="w-full h-2.5 rounded-full bg-white/15 overflow-hidden my-2">
+          {/* Countdown Progress Bar */}
+          <div className="w-full h-2.5 rounded-full bg-white/15 overflow-hidden my-2">
+            <div
+              className={`h-full transition-all duration-500 ${
+                timeLeft <= 8 ? 'bg-rose-400' : 'bg-emerald-400'
+              }`}
+              style={{ width: `${timeRatio}%` }}
+            />
+          </div>
+
+          {/* Main Giant Word Card + Huge Thumb-Friendly Side Tap Buttons */}
           <div
-            className={`h-full transition-all duration-500 ${
-              timeLeft <= 8 ? 'bg-rose-400' : 'bg-emerald-400'
+            className={`flex-1 flex flex-row items-stretch gap-2.5 sm:gap-4 my-1 ${
+              landscapeCard ? 'rotate-90 sm:rotate-0' : ''
             }`}
-            style={{ width: `${timeRatio}%` }}
-          />
-        </div>
-
-        {/* Main Giant Word Card + Side Fallback Tap Buttons */}
-        <div
-          className={`flex-1 flex flex-col sm:flex-row items-stretch gap-3 sm:gap-4 my-1 ${
-            landscapeCard ? 'rotate-90 sm:rotate-0' : ''
-          }`}
-        >
-          {/* Skip Button (Right in RTL) */}
-          <button
-            type="button"
-            onClick={() => advanceCard('skip')}
-            className="sm:w-36 min-h-[74px] rounded-3xl bg-amber-500/90 hover:bg-amber-400 active:scale-95 border-2 border-amber-200/70 shadow-lg flex sm:flex-col items-center justify-center gap-2 px-4 py-3 text-slate-950 font-black text-lg transition-transform"
           >
-            <SkipForward className="w-7 h-7" />
-            <span>تخطي ⏭️</span>
-          </button>
+            {/* Skip Button (Right side in RTL) */}
+            <button
+              type="button"
+              onClick={() => advanceCard('skip')}
+              className="w-24 sm:w-40 min-h-[120px] rounded-3xl bg-amber-500/95 hover:bg-amber-400 active:scale-95 border-2 border-amber-200/80 shadow-xl flex flex-col items-center justify-center gap-2 px-2 py-3 text-slate-950 font-black text-base sm:text-xl transition-transform shrink-0"
+            >
+              <SkipForward className="w-7 h-7 sm:w-9 sm:h-9" />
+              <span>تخطي ⏭️</span>
+            </button>
 
-          {/* Giant Secret Word Display */}
-          <div className="flex-1 rounded-3xl bg-white/10 backdrop-blur-md border-2 border-white/25 shadow-2xl flex flex-col items-center justify-center p-5 text-center">
-            {flashState === 'correct' ? (
-              <div className="text-4xl sm:text-6xl font-black text-white animate-bounce">
-                صح! ✅ +{POINTS_PER_CORRECT}
-              </div>
-            ) : flashState === 'skip' ? (
-              <div className="text-4xl sm:text-6xl font-black text-white">تخطي ⏭️</div>
-            ) : (
-              <>
-                <span className="text-xs sm:text-sm font-extrabold text-white/70 mb-2">
-                  المطلوب تمثيله أو وصفه بدون كلام:
-                </span>
-                <div className="text-4xl sm:text-6xl font-black leading-tight text-white drop-shadow-lg break-words max-w-full">
-                  {activeWord}
+            {/* Giant Secret Word Display */}
+            <div className="flex-1 rounded-3xl bg-white/12 backdrop-blur-md border-2 border-white/30 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center min-w-0">
+              {flashState === 'correct' ? (
+                <div className="text-4xl sm:text-6xl font-black text-white animate-bounce">
+                  صح! ✅ +{POINTS_PER_CORRECT}
                 </div>
-                {gyroSupported && gyroPermissionState === 'granted' && (
-                  <span className="mt-4 text-[11px] font-bold text-white/65">
-                    ميل الموبايل لتحت = صح ✅ · لفوق = تخطي ⏭️
+              ) : flashState === 'skip' ? (
+                <div className="text-4xl sm:text-6xl font-black text-white">تخطي ⏭️</div>
+              ) : (
+                <>
+                  <span className="text-xs sm:text-sm font-extrabold text-white/75 mb-2">
+                    المطلوب تمثيله أو وصفه بدون كلام:
                   </span>
-                )}
-              </>
-            )}
-          </div>
+                  <div className="text-3xl sm:text-6xl font-black leading-tight text-white drop-shadow-lg break-words max-w-full">
+                    {activeWord}
+                  </div>
+                  {gyroSupported && gyroPermissionState === 'granted' && gyroEnabled && (
+                    <span className="mt-4 text-[11px] font-bold text-white/70">
+                      ميل لتحت = صح ✅ · لفوق = تخطي ⏭️ (أو اضغط الزراير الجانبية)
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
 
-          {/* Correct Button (Left in RTL) */}
-          <button
-            type="button"
-            onClick={() => advanceCard('correct')}
-            className="sm:w-36 min-h-[82px] rounded-3xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 border-2 border-emerald-200/70 shadow-lg flex sm:flex-col items-center justify-center gap-2 px-4 py-3 text-white font-black text-lg transition-transform"
-          >
-            <Check className="w-8 h-8" />
-            <span>صح! ✅</span>
-          </button>
+            {/* Correct Button (Left side in RTL) */}
+            <button
+              type="button"
+              onClick={() => advanceCard('correct')}
+              className="w-24 sm:w-40 min-h-[120px] rounded-3xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 border-2 border-emerald-200/80 shadow-xl flex flex-col items-center justify-center gap-2 px-2 py-3 text-white font-black text-base sm:text-xl transition-transform shrink-0"
+            >
+              <Check className="w-8 h-8 sm:w-10 sm:h-10" />
+              <span>صح! ✅</span>
+            </button>
+          </div>
         </div>
-      </div>
+
+        <ConfirmModal
+          open={showExitConfirm}
+          title="متأكد إنك عايز تخرج من اللعبة؟"
+          message="الجولة لسه شغالة، لو خرجت دلوقتي تقدم الدور هيتلغي."
+          confirmLabel="نعم، اخرج"
+          cancelLabel="كمل لعب"
+          onConfirm={() => {
+            setShowExitConfirm(false);
+            onExitToHub();
+          }}
+          onCancel={() => setShowExitConfirm(false)}
+        />
+      </>
     );
   }
 
@@ -479,9 +567,12 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
     <div className="min-h-screen flex flex-col">
       <TopBar
         title="بدون كلام 🎭"
-        exitVariant="back"
-        exitLabel="رجوع"
-        onExit={onExitToHub}
+        exitVariant={isRoundInProgress ? 'exit' : 'back'}
+        exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
+        onExit={() => {
+          if (isRoundInProgress) setShowExitConfirm(true);
+          else onExitToHub();
+        }}
       />
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 pb-10 pt-2 flex flex-col items-center">
@@ -701,6 +792,19 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
           />
         )}
       </main>
+
+      <ConfirmModal
+        open={showExitConfirm}
+        title="متأكد إنك عايز تخرج من اللعبة؟"
+        message="الجولة لسه شغالة، لو خرجت دلوقتي تقدم الدور هيتلغي."
+        confirmLabel="نعم، اخرج"
+        cancelLabel="كمل لعب"
+        onConfirm={() => {
+          setShowExitConfirm(false);
+          onExitToHub();
+        }}
+        onCancel={() => setShowExitConfirm(false)}
+      />
     </div>
   );
 };
