@@ -324,7 +324,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       {explodingFlash && (
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-rose-600/45 backdrop-blur-[2px]"
+          className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-rose-600/60"
         >
           <div className="w-[340px] h-[340px] rounded-full bg-gradient-to-br from-amber-300 via-orange-500 to-rose-600 animate-blast-expand shadow-[0_0_95px_45px_rgba(249,115,22,0.85)]" />
           <div className="absolute text-5xl sm:text-6xl font-black text-white drop-shadow-[0_6px_14px_rgba(0,0,0,0.7)] animate-boom-text-3s">

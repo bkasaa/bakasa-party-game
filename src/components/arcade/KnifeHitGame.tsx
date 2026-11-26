@@ -709,6 +709,7 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
+    let shakeTimerId: number | null = null;
     const step = (now: number) => {
       const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameRef.current) / 1000));
       lastFrameRef.current = now;
@@ -773,12 +774,14 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
             soundManager.play('shatter');
             triggerHaptic(150);
             setShaking(true);
-            window.setTimeout(() => setShaking(false), 260);
+            if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+            shakeTimerId = window.setTimeout(() => setShaking(false), 260);
             eliminatedRef.current[fk.playerIdx] = true;
             setEliminatedList([...eliminatedRef.current]);
 
-            // Shatter knife into flying shards
+            // Shatter knife into flying shards (capped at <= 60)
             for (let s = 0; s < 5; s++) {
+              if (shardsRef.current.length >= 60) shardsRef.current.shift();
               const outAngle = worldHitAngle + (Math.random() - 0.5) * 1.3;
               const spd = 220 + Math.random() * 220;
               shardsRef.current.push({
@@ -888,7 +891,10 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+    };
   }, [phase, players, stage, matchSeconds, getGeometry, drawScene, finishMatch]);
 
   const handleCornerThrow = (playerIdx: number) => {

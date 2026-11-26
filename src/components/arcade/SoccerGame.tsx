@@ -899,6 +899,9 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
             p.y += p.slideVy * dt;
 
             if (Math.random() < 0.75) {
+              if (skidsRef.current.length >= 60) {
+                skidsRef.current.shift();
+              }
               skidsRef.current.push({
                 x: p.x,
                 y: p.y,
@@ -1112,7 +1115,13 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (goalTimeoutRef.current !== null) {
+        window.clearTimeout(goalTimeoutRef.current);
+        goalTimeoutRef.current = null;
+      }
+    };
   }, [
     phase,
     effectiveDuration,
@@ -1434,7 +1443,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
 
           <div
             dir="ltr"
-            className="pointer-events-none absolute top-[36px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-black/60 backdrop-blur-sm border border-white/15 px-3 py-0.5 shadow-md text-[11px] sm:text-xs font-black text-white tabular-nums whitespace-nowrap"
+            className="pointer-events-none absolute top-[36px] left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-full bg-black/80 border border-white/15 px-3 py-0.5 shadow-md text-[11px] sm:text-xs font-black text-white tabular-nums whitespace-nowrap"
           >
             <span className="flex items-center gap-1">
               <span
@@ -1531,10 +1540,10 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
                   style={{
                     borderColor: teamHex,
                     backgroundColor: jv.active
-                      ? 'rgba(15, 23, 42, 0.45)'
-                      : 'rgba(15, 23, 42, 0.28)',
+                      ? 'rgba(15, 23, 42, 0.72)'
+                      : 'rgba(15, 23, 42, 0.52)',
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
                     style={{

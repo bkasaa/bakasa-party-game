@@ -603,6 +603,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
+    let shakeTimerId: number | null = null;
     const step = (now: number) => {
       const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameRef.current) / 1000));
       lastFrameRef.current = now;
@@ -707,7 +708,8 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
               soundManager.play('sting');
               triggerHaptic(150);
               setShaking(true);
-              window.setTimeout(() => setShaking(false), 260);
+              if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+              shakeTimerId = window.setTimeout(() => setShaking(false), 260);
             } else {
               soundManager.play('catch');
               triggerHaptic(25);
@@ -744,7 +746,10 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+    };
   }, [phase, roundNum, matchSeconds, drawScene, finishMatch]);
 
   const handleCornerShoot = (playerIdx: number) => {

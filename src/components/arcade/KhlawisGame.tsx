@@ -909,10 +909,11 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   const burstsRef = useRef<BurstEffect[]>([]);
   const searchedUntilMapRef = useRef<Record<string, number>>({});
 
-  // Strictly fixed base multi-touch joystick slots (up to 4 isolated pointerIds for dynamic split-screen)
+  // Strictly fixed base multi-touch joystick slots (up to 4 isolated touches/pointers for dynamic split-screen)
   const hunterJoysRef = useRef<
     Array<{
       pointerId: number | null;
+      touchId: number | null;
       cx: number;
       cy: number;
       dx: number;
@@ -920,14 +921,15 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
       active: boolean;
     }>
   >([
-    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
-    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
-    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
-    { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
+    { pointerId: null, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0, active: false },
   ]);
 
   const secondsLeftRef = useRef<number>(secondsLeft);
   const roundEndedRef = useRef<boolean>(false);
+  const finishTimerRef = useRef<number | null>(null);
 
   // Keep seekerPlayerIdx within bounds if players were edited
   useEffect(() => {
@@ -953,6 +955,15 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     secondsLeftRef.current = secondsLeft;
   }, [secondsLeft]);
 
+  useEffect(() => {
+    return () => {
+      if (finishTimerRef.current !== null) {
+        window.clearTimeout(finishTimerRef.current);
+        finishTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const playerHexes = useMemo(
     () =>
       players.map((_, idx) => {
@@ -976,6 +987,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   const clearJoystick = useCallback(() => {
     hunterJoysRef.current.forEach((slot) => {
       slot.pointerId = null;
+      slot.touchId = null;
       slot.dx = 0;
       slot.dy = 0;
       slot.active = false;
@@ -988,12 +1000,21 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     ]);
   }, []);
 
+  // Reset stale pointer/touch locks whenever viewports dynamically split (e.g. 1 -> 2 hunters)
+  useEffect(() => {
+    clearJoystick();
+  }, [activeHunterCount, clearJoystick]);
+
   const currentHiderPlayerIdx = hiderQueue[hideStep] ?? 0;
 
   const finalizeRound = useCallback(
     (seekerWonAll: boolean) => {
       if (roundEndedRef.current) return;
       roundEndedRef.current = true;
+      if (finishTimerRef.current !== null) {
+        window.clearTimeout(finishTimerRef.current);
+        finishTimerRef.current = null;
+      }
       clearJoystick();
 
       const caughtCount = hidersRef.current.filter((h) => h.caught).length;
@@ -1320,7 +1341,10 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
         const totalCaught = hidersRef.current.filter((h) => h.caught).length;
         setCaughtCountUI(totalCaught);
         if (totalCaught >= hidersRef.current.length) {
-          window.setTimeout(() => finalizeRound(true), 650);
+          if (finishTimerRef.current !== null) {
+            window.clearTimeout(finishTimerRef.current);
+          }
+          finishTimerRef.current = window.setTimeout(() => finalizeRound(true), 650);
         }
       } else {
         soundManager.play('whoosh');
@@ -1933,7 +1957,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     const pushFootstep = (x: number, y: number, angle: number, walkPhase: number, color: string) => {
       const side: -1 | 1 = Math.sin(walkPhase) >= 0 ? 1 : -1;
       footstepsRef.current.push({ x, y, angle, side, color, life: 1.0 });
-      if (footstepsRef.current.length > 96) {
+      if (footstepsRef.current.length > 60) {
         footstepsRef.current.shift();
       }
     };
@@ -2037,7 +2061,10 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           setCaughtCountUI(totalCaught);
           if (totalCaught >= hidersRef.current.length) {
             drawWorld(now);
-            window.setTimeout(() => finalizeRound(true), 600);
+            if (finishTimerRef.current !== null) {
+              window.clearTimeout(finishTimerRef.current);
+            }
+            finishTimerRef.current = window.setTimeout(() => finalizeRound(true), 600);
             return;
           }
         }
@@ -2137,7 +2164,64 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     );
   };
 
+  const resetJoySlot = (slotIdx: number) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot) return;
+    slot.pointerId = null;
+    slot.touchId = null;
+    slot.dx = 0;
+    slot.dy = 0;
+    slot.active = false;
+    setJoyVisuals((prev) =>
+      prev.map((item, idx) => (idx === slotIdx ? { kx: 0, ky: 0, active: false } : item))
+    );
+  };
+
+  // Native multi-touch handlers (isolated by touch.identifier across all 4 quadrants)
+  const handleJoyTouchStart = (slotIdx: number) => (e: React.TouchEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+    e.stopPropagation();
+    soundManager.unlock();
+    const rect = e.currentTarget.getBoundingClientRect();
+    slot.cx = rect.left + rect.width / 2;
+    slot.cy = rect.top + rect.height / 2;
+    slot.touchId = touch.identifier;
+    slot.pointerId = null;
+    triggerHaptic(12);
+    updateJoyFromClient(slotIdx, touch.clientX, touch.clientY);
+  };
+
+  const handleJoyTouchMove = (slotIdx: number) => (e: React.TouchEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot || slot.touchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier === slot.touchId) {
+        e.stopPropagation();
+        updateJoyFromClient(slotIdx, t.clientX, t.clientY);
+        break;
+      }
+    }
+  };
+
+  const handleJoyTouchEnd = (slotIdx: number) => (e: React.TouchEvent<HTMLDivElement>) => {
+    const slot = hunterJoysRef.current[slotIdx];
+    if (!slot || slot.touchId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === slot.touchId) {
+        e.stopPropagation();
+        resetJoySlot(slotIdx);
+        break;
+      }
+    }
+  };
+
+  // Mouse / Pen pointer fallback for desktop testing (touch uses native Touch handlers above)
   const handleJoyDown = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
     const slot = hunterJoysRef.current[slotIdx];
     if (!slot || slot.pointerId !== null) return;
     e.preventDefault();
@@ -2157,6 +2241,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   };
 
   const handleJoyMove = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
     const slot = hunterJoysRef.current[slotIdx];
     if (!slot || slot.pointerId !== e.pointerId) return;
     e.preventDefault();
@@ -2164,6 +2249,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   };
 
   const handleJoyEnd = (slotIdx: number) => (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
     const slot = hunterJoysRef.current[slotIdx];
     if (!slot || slot.pointerId !== e.pointerId) return;
     try {
@@ -2173,13 +2259,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
     } catch {
       // Ignore release errors
     }
-    slot.pointerId = null;
-    slot.dx = 0;
-    slot.dy = 0;
-    slot.active = false;
-    setJoyVisuals((prev) =>
-      prev.map((item, idx) => (idx === slotIdx ? { kx: 0, ky: 0, active: false } : item))
-    );
+    resetJoySlot(slotIdx);
   };
 
   const activePlayer =
@@ -2486,16 +2566,16 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             className="w-full h-full block bg-[#0F172A]"
           />
 
-          {/* Compact Floating Top HUD */}
+          {/* Compact Floating Top HUD (never blocks corner joysticks) */}
           <div
             dir="rtl"
-            className="fixed top-3 inset-x-3 z-30 flex items-center justify-between gap-2 pointer-events-none"
+            className="fixed top-2 inset-x-2 z-20 flex items-center justify-between gap-2 pointer-events-none"
           >
             <div className="flex items-center gap-1.5 pointer-events-auto">
               <button
                 type="button"
                 onClick={() => setShowExitConfirm(true)}
-                className="min-h-[38px] px-3 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-300/60 text-white text-xs font-black shadow-lg flex items-center gap-1"
+                className="min-h-[36px] px-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 border border-rose-300/60 text-white text-xs font-black shadow-lg flex items-center gap-1"
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
                 <span>خروج</span>
@@ -2507,14 +2587,14 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
                   setMuted(next);
                 }}
                 aria-label={muted ? 'تشغيل الصوت' : 'كتم الصوت'}
-                className="w-[38px] h-[38px] rounded-xl bg-slate-900/85 border border-white/25 text-white flex items-center justify-center shadow-lg"
+                className="w-[36px] h-[36px] rounded-xl bg-slate-900/90 border border-white/25 text-white flex items-center justify-center shadow-lg"
               >
                 {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
               </button>
             </div>
 
             {/* Active Role + Room Location Pill */}
-            <div className="rounded-2xl bg-slate-950/85 border border-white/25 px-3 py-1.5 text-center shadow-lg backdrop-blur-md max-w-[52%]">
+            <div className="rounded-2xl bg-slate-950/90 border border-white/25 px-3 py-1 text-center shadow-lg max-w-[52%]">
               <div className="text-[11px] font-black text-white truncate">
                 {phase === 'HIDE_ACTIVE' ? (
                   <>
@@ -2534,10 +2614,10 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
 
             {/* Countdown Timer */}
             <div
-              className={`min-w-[62px] min-h-[38px] px-2.5 rounded-xl border font-black text-sm tabular-nums flex items-center justify-center shadow-lg ${
+              className={`min-w-[60px] min-h-[36px] px-2.5 rounded-xl border font-black text-sm tabular-nums flex items-center justify-center shadow-lg ${
                 secondsLeft <= 8
                   ? 'bg-rose-600 border-rose-300 text-white animate-pulse'
-                  : 'bg-slate-950/85 border-white/25 text-white'
+                  : 'bg-slate-950/90 border-white/25 text-white'
               }`}
             >
               ⏱ {secondsLeft}ث
@@ -2548,23 +2628,27 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
           {(phase === 'HIDE_ACTIVE' || activeHunterCount === 1) && (
             <div
               style={{ touchAction: 'none' }}
+              onTouchStart={handleJoyTouchStart(0)}
+              onTouchMove={handleJoyTouchMove(0)}
+              onTouchEnd={handleJoyTouchEnd(0)}
+              onTouchCancel={handleJoyTouchEnd(0)}
               onPointerDown={handleJoyDown(0)}
               onPointerMove={handleJoyMove(0)}
               onPointerUp={handleJoyEnd(0)}
               onPointerCancel={handleJoyEnd(0)}
               onLostPointerCapture={handleJoyEnd(0)}
-              className="absolute bottom-5 left-5 z-30 w-[114px] h-[114px] rounded-full cursor-pointer select-none flex items-center justify-center"
+              className="absolute bottom-5 left-5 z-40 w-[114px] h-[114px] rounded-full cursor-pointer select-none flex items-center justify-center"
             >
               <div
                 style={{
                   borderColor: activeHex,
                   backgroundColor: joyVisuals[0]?.active
-                    ? 'rgba(15, 23, 42, 0.52)'
-                    : 'rgba(15, 23, 42, 0.34)',
+                    ? 'rgba(15, 23, 42, 0.72)'
+                    : 'rgba(15, 23, 42, 0.52)',
                 }}
-                className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+                className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] shadow-[0_4px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
               >
-                <span className="pointer-events-none absolute -top-5 px-2.5 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white whitespace-nowrap">
+                <span className="pointer-events-none absolute -top-5 px-2.5 py-0.5 rounded-full bg-black/85 text-[10px] font-black text-white whitespace-nowrap">
                   {isCurrentHidden && phase === 'HIDE_ACTIVE' ? '🫣 مستخبي جوه' : 'حرّك هنا'}
                 </span>
                 <div
@@ -2589,22 +2673,26 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
               const nearFurnForSlot = hunterNearbyFurns[slotIdx];
               const hex = badge?.hex ?? (slotIdx === 0 ? playerHexes[seekerPlayerIdx] : '#84CC16');
 
-              // Map each viewport's joystick & inspect button strictly inside its own quadrant
+              const isTopSlot =
+                (activeHunterCount === 2 && slotIdx === 0) ||
+                (activeHunterCount >= 3 && (slotIdx === 0 || slotIdx === 1));
+
+              // Map each viewport's joystick & inspect button strictly inside its own quadrant with clear HUD spacing
               const joyPosClass =
                 activeHunterCount === 2
                   ? slotIdx === 0
-                    ? 'top-14 left-3'
+                    ? 'top-[62px] left-3'
                     : 'bottom-3 right-3'
                   : activeHunterCount === 3
                     ? slotIdx === 0
-                      ? 'top-14 left-3'
+                      ? 'top-[62px] left-3'
                       : slotIdx === 1
-                        ? 'top-14 right-3'
+                        ? 'top-[62px] right-3'
                         : 'bottom-3 left-3'
                     : slotIdx === 0
-                      ? 'top-14 left-2.5'
+                      ? 'top-[62px] left-2.5'
                       : slotIdx === 1
-                        ? 'top-14 right-2.5'
+                        ? 'top-[62px] right-2.5'
                         : slotIdx === 2
                           ? 'bottom-3 left-2.5'
                           : 'bottom-3 right-2.5';
@@ -2612,7 +2700,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
               const inspectPosClass =
                 activeHunterCount === 2
                   ? slotIdx === 0
-                    ? 'top-14 right-3'
+                    ? 'top-[62px] right-3'
                     : 'bottom-3 left-3'
                   : activeHunterCount === 3
                     ? slotIdx === 0
@@ -2629,28 +2717,34 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
                           : 'top-[calc(50%+10px)] right-2.5';
 
               return (
-                <React.Fragment key={slotIdx}>
+                <React.Fragment key={`hunter-slot-${slotIdx}`}>
                   <div
                     style={{ touchAction: 'none' }}
+                    onTouchStart={handleJoyTouchStart(slotIdx)}
+                    onTouchMove={handleJoyTouchMove(slotIdx)}
+                    onTouchEnd={handleJoyTouchEnd(slotIdx)}
+                    onTouchCancel={handleJoyTouchEnd(slotIdx)}
                     onPointerDown={handleJoyDown(slotIdx)}
                     onPointerMove={handleJoyMove(slotIdx)}
                     onPointerUp={handleJoyEnd(slotIdx)}
                     onPointerCancel={handleJoyEnd(slotIdx)}
                     onLostPointerCapture={handleJoyEnd(slotIdx)}
-                    className={`absolute ${joyPosClass} z-30 w-[92px] h-[92px] rounded-full cursor-pointer select-none flex items-center justify-center`}
+                    className={`absolute ${joyPosClass} z-40 w-[92px] h-[92px] rounded-full cursor-pointer select-none flex items-center justify-center`}
                   >
                     <div
                       style={{
                         borderColor: hex,
                         backgroundColor: jVis.active
-                          ? 'rgba(15, 23, 42, 0.56)'
-                          : 'rgba(15, 23, 42, 0.36)',
+                          ? 'rgba(15, 23, 42, 0.72)'
+                          : 'rgba(15, 23, 42, 0.54)',
                       }}
-                      className="pointer-events-none relative w-full h-full rounded-full border-[3px] backdrop-blur-[2px] shadow-[0_3px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+                      className="pointer-events-none relative w-full h-full rounded-full border-[3px] shadow-[0_3px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
                     >
                       <span
                         dir="rtl"
-                        className="pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-slate-950/85 border border-white/20 text-[10px] font-black text-white whitespace-nowrap max-w-[120px] truncate"
+                        className={`pointer-events-none absolute ${
+                          isTopSlot ? '-bottom-5' : '-top-5'
+                        } px-2 py-0.5 rounded-full bg-slate-950/90 border border-white/20 text-[10px] font-black text-white whitespace-nowrap max-w-[120px] truncate`}
                       >
                         {badge?.role === 'zombie' ? '🧟' : '🕵️‍♂️'} {badge?.name ?? ''}
                       </span>
@@ -2671,7 +2765,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
                       dir="rtl"
                       type="button"
                       onClick={() => handleInspectFurniture(slotIdx)}
-                      className={`absolute ${inspectPosClass} z-30 min-h-[40px] px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 border-2 border-amber-200 border-b-4 border-b-amber-800 text-slate-950 font-black text-[11px] shadow-xl flex items-center gap-1 animate-pulse transition-transform`}
+                      className={`absolute ${inspectPosClass} z-40 min-h-[40px] px-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 border-2 border-amber-200 border-b-4 border-b-amber-800 text-slate-950 font-black text-[11px] shadow-xl flex items-center gap-1 animate-pulse transition-transform`}
                     >
                       <Search className="w-3.5 h-3.5" />
                       <span>فتّش 🔍</span>

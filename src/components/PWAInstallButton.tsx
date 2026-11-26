@@ -54,7 +54,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
 
         {showIOSGuide && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/65 backdrop-blur-sm p-4 animate-modal-backdrop"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/82 p-4 animate-modal-backdrop"
             role="dialog"
             aria-modal="true"
             aria-labelledby="ios-install-title"

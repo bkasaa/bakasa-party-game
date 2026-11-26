@@ -1170,10 +1170,10 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                   style={{
                     borderColor: theme.hex,
                     backgroundColor: jv.active
-                      ? 'rgba(15, 23, 42, 0.44)'
-                      : 'rgba(15, 23, 42, 0.28)',
+                      ? 'rgba(15, 23, 42, 0.72)'
+                      : 'rgba(15, 23, 42, 0.52)',
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
                     className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/70 text-[10px] font-black text-white truncate max-w-[100px] tabular-nums ${

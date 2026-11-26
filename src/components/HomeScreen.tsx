@@ -136,7 +136,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             }}
             className={`w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-95 ${
               muted
-                ? 'bg-[#FFF1F2]/90 dark:bg-[#4C0519]/90 backdrop-blur-md border-2 border-[#FECDD3] dark:border-[#9F1239] border-b-4 border-b-[#FDA4AF] dark:border-b-[#881337] text-[#E11D48] dark:text-[#FDA4AF]'
+                ? 'bg-[#FFF1F2]/95 dark:bg-[#4C0519]/95 border-2 border-[#FECDD3] dark:border-[#9F1239] border-b-4 border-b-[#FDA4AF] dark:border-b-[#881337] text-[#E11D48] dark:text-[#FDA4AF]'
                 : 'qada-glass-pill hover:brightness-105 text-[#1E293B] dark:text-[#F8FAFC]'
             }`}
           >
@@ -188,9 +188,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {/* Custom App Logo Hero */}
         <div className="w-full max-w-md px-2 pb-4 pt-1 text-center relative flex flex-col items-center">
           <div
-            className="absolute top-2 left-1/2 -translate-x-1/2 w-52 h-36 rounded-full blur-3xl opacity-25 dark:opacity-35 pointer-events-none"
+            className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-44 rounded-full opacity-30 dark:opacity-40 pointer-events-none"
             style={{
-              background: 'linear-gradient(90deg, #FF6B4A 0%, #F59E0B 50%, #14B8A6 100%)',
+              background:
+                'radial-gradient(circle, rgba(255,107,74,0.55) 0%, rgba(245,158,11,0.3) 45%, rgba(20,184,166,0) 72%)',
             }}
           />
 
@@ -467,7 +468,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       {/* How to Play Modal */}
       {showRulesModal && (
         <div
-          className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md ${
+          className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/82 ${
             closingRulesModal ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
           }`}
           role="dialog"

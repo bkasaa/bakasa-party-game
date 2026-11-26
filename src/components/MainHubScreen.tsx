@@ -179,7 +179,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                     isFeatured
                       ? 'min-h-[88px] px-4 py-3.5 flex items-center justify-between gap-3'
                       : 'min-h-[152px] p-3.5 flex flex-col justify-between gap-2'
-                  } rounded-3xl ${style.bg} ${style.shadow} border ${style.border} backdrop-blur-md qada-spring-card text-right ${
+                  } rounded-3xl ${style.bg} ${style.shadow} border ${style.border} qada-spring-card text-right ${
                     !game.active ? 'opacity-80' : 'hover:brightness-105'
                   } ${
                     isHighlighted

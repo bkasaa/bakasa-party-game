@@ -396,7 +396,7 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
                 <span>خروج</span>
               </button>
 
-              <div className="flex items-center gap-2 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 px-3 py-1.5">
+              <div className="flex items-center gap-2 rounded-2xl bg-slate-800/90 border border-white/25 px-3 py-1.5">
                 <span className="text-xs font-extrabold text-white/80">اللي بيمثل:</span>
                 <span className="text-sm sm:text-base font-black text-amber-300">
                   {currentPlayer.name}
@@ -511,7 +511,7 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
             </button>
 
             {/* Giant Secret Word Display */}
-            <div className="flex-1 rounded-3xl bg-white/12 backdrop-blur-md border-2 border-white/30 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center min-w-0">
+            <div className="flex-1 rounded-3xl bg-slate-900/75 border-2 border-white/30 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center min-w-0">
               {flashState === 'correct' ? (
                 <div className="text-4xl sm:text-6xl font-black text-white animate-bounce">
                   صح! ✅ +{POINTS_PER_CORRECT}

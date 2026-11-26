@@ -41,7 +41,7 @@ export const ArcadeSeriesOverlay: React.FC<ArcadeSeriesOverlayProps> = ({
   return (
     <div
       dir="rtl"
-      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-[#1E293B]/55 dark:bg-[#020617]/75 backdrop-blur-sm select-none"
+      className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-[#1E293B]/80 dark:bg-[#020617]/88 select-none"
     >
       <div className="w-full max-w-sm rounded-3xl qada-card p-5 shadow-2xl text-center">
         <div className="text-xs font-extrabold text-[#0D9488] dark:text-[#2DD4BF] tabular-nums mb-1">

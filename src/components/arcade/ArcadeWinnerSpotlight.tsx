@@ -117,7 +117,7 @@ export const ArcadeWinnerSpotlight: React.FC<ArcadeWinnerSpotlightProps> = ({
           </svg>
         </div>
 
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-black/35 border border-white/30 px-3.5 py-1 text-xs font-black text-amber-200 mb-3 backdrop-blur-sm">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-black/55 border border-white/30 px-3.5 py-1 text-xs font-black text-amber-200 mb-3">
           <Sparkles className="w-3.5 h-3.5 text-amber-300" />
           <span>{winners.length > 1 ? 'أبطال التحدي!' : 'بطل السلسلة!'}</span>
         </div>

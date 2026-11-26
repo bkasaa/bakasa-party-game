@@ -26,7 +26,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md animate-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/82 animate-modal-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-modal-title"

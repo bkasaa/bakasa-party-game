@@ -628,6 +628,7 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
+    let shakeTimerId: number | null = null;
     let lastStatusSync = 0;
 
     const step = (now: number) => {
@@ -721,6 +722,9 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
         roller.y = nextY;
 
         if (isSpeed && Math.random() < 0.65) {
+          if (trailsRef.current.length >= 60) {
+            trailsRef.current.shift();
+          }
           trailsRef.current.push({
             x: prevX,
             y: prevY,
@@ -758,7 +762,8 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
               soundManager.play('freeze');
               triggerHaptic(150);
               setShaking(true);
-              window.setTimeout(() => setShaking(false), 260);
+              if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+              shakeTimerId = window.setTimeout(() => setShaking(false), 260);
               rollersRef.current.forEach((other, oIdx) => {
                 if (oIdx !== i) {
                   other.frozenUntil = now + 4000;
@@ -789,7 +794,10 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+    };
   }, [phase, matchSeconds, drawScene, computeCoverageAndFinish]);
 
   // Strictly Fixed-Base Multi-Touch 360° Virtual Analog Joystick handlers
@@ -980,12 +988,12 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
                   style={{
                     borderColor: eff.frozen ? '#7dd3fc' : theme.hex,
                     backgroundColor: eff.frozen
-                      ? 'rgba(14, 165, 233, 0.34)'
+                      ? 'rgba(14, 165, 233, 0.54)'
                       : jv.active
-                        ? 'rgba(15, 23, 42, 0.44)'
-                        : 'rgba(15, 23, 42, 0.28)',
+                        ? 'rgba(15, 23, 42, 0.72)'
+                        : 'rgba(15, 23, 42, 0.52)',
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span className="pointer-events-none absolute top-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />
                   <span className="pointer-events-none absolute bottom-1.5 w-1.5 h-1.5 rounded-full bg-white/45" />

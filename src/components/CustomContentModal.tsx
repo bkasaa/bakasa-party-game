@@ -154,7 +154,7 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/60 backdrop-blur-md ${
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/82 ${
         closing ? 'animate-modal-backdrop-out' : 'animate-modal-backdrop'
       }`}
       role="dialog"

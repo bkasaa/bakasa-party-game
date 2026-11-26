@@ -822,6 +822,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
+    let shakeTimerId: number | null = null;
     let lastUiSync = 0;
 
     const step = (now: number) => {
@@ -946,8 +947,11 @@ export const RacingGame: React.FC<RacingGameProps> = ({
           }
         }
 
-        // Flame exhaust trail when boosting
+        // Flame exhaust trail when boosting (capped at <= 60)
         if (isTurbo && Math.hypot(car.vx, car.vy) > 20 && Math.random() < 0.75) {
+          if (exhaustRef.current.length >= 60) {
+            exhaustRef.current.shift();
+          }
           exhaustRef.current.push({
             x: car.x - Math.cos(car.angle) * 16,
             y: car.y - Math.sin(car.angle) * 16,
@@ -1014,7 +1018,8 @@ export const RacingGame: React.FC<RacingGameProps> = ({
               soundManager.play('freeze');
               triggerHaptic(150);
               setShaking(true);
-              window.setTimeout(() => setShaking(false), 260);
+              if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+              shakeTimerId = window.setTimeout(() => setShaking(false), 260);
               carsRef.current.forEach((other, oIdx) => {
                 if (oIdx !== i) {
                   other.frozenUntil = now + 3000;
@@ -1092,7 +1097,10 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+    };
   }, [phase, targetLaps, drawScene, finishRound]);
 
   // Zero-Deadzone 360-Degree Corner Arcade Joystick Multi-Touch Handlers
@@ -1283,7 +1291,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
                   style={{
                     borderColor: st.frozen ? '#bae6fd' : st.turbo ? '#fb923c' : theme.hex,
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[4px] bg-slate-950/35 backdrop-blur-[2px] shadow-[0_5px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
+                  className="pointer-events-none relative w-full h-full rounded-full border-[4px] bg-slate-950/60 shadow-[0_5px_0_rgba(0,0,0,0.4)] flex items-center justify-center"
                 >
                   {/* Subtle 4-way guide ticks */}
                   <span className="absolute top-1.5 left-1/2 -translate-x-1/2 w-1.5 h-2 rounded-full bg-white/40" />

@@ -43,7 +43,7 @@ export const ActiveTurnBanner: React.FC<ActiveTurnBannerProps> = ({
     <div
       className={`${
         sticky ? 'sticky top-2 z-30' : ''
-      } w-full rounded-2xl border-2 ${ACCENT_RING[accent]} backdrop-blur-md px-3.5 py-2 shadow-md flex items-center justify-between gap-2.5 mb-2.5`}
+      } w-full rounded-2xl border-2 ${ACCENT_RING[accent]} px-3.5 py-2 shadow-md flex items-center justify-between gap-2.5 mb-2.5`}
     >
       <div className="flex items-center gap-2.5 min-w-0">
         {player ? (

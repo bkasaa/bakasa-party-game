@@ -1168,7 +1168,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
       {/* Balanced Circular Question Order Modal */}
       {showQuestionOrderModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/65 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F172A]/82"
           role="dialog"
           aria-modal="true"
           aria-labelledby="question-order-title"

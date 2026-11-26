@@ -276,19 +276,22 @@ function createAnimalBody(spec: AnimalSpec, x: number, y: number, angleRad: numb
   const parts = spec.parts.map((r) =>
     Matter.Bodies.rectangle(r.x, r.y, r.w, r.h, {
       chamfer: { radius: 4 },
-      friction: 0.9,
-      frictionStatic: 1.0,
-      restitution: 0.04,
+      friction: 1.0,
+      frictionStatic: 10.0,
+      restitution: 0.0,
+      slop: 0.01,
       density: spec.density,
     })
   );
 
   const body = Matter.Body.create({
     parts,
-    friction: 0.9,
-    frictionStatic: 1.0,
-    restitution: 0.04,
-    frictionAir: 0.012,
+    friction: 1.0,
+    frictionStatic: 10.0,
+    restitution: 0.0,
+    frictionAir: 0.05,
+    slop: 0.01,
+    sleepThreshold: 30,
   });
 
   Matter.Body.setPosition(body, { x, y });
@@ -765,31 +768,36 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
 
     const engine = Matter.Engine.create({
       gravity: { x: 0, y: 1.05, scale: 0.001 },
-      positionIterations: 10,
-      velocityIterations: 8,
+      enableSleeping: true,
+      positionIterations: 12,
+      velocityIterations: 10,
     });
 
     const platform = Matter.Bodies.rectangle(PLATFORM_X, PLATFORM_Y, PLATFORM_W, PLATFORM_H, {
       isStatic: true,
       friction: 1.0,
-      frictionStatic: 1.2,
-      restitution: 0.02,
+      frictionStatic: 10.0,
+      restitution: 0.0,
+      slop: 0.01,
       chamfer: { radius: 8 },
       label: 'platform',
     });
 
     Matter.World.add(engine.world, platform);
 
-    // Subtle dust puffs on landing impacts
+    // Subtle dust puffs on landing impacts (capped at <= 60 active particles)
     Matter.Events.on(engine, 'collisionStart', (event) => {
       for (const pair of event.pairs) {
         const dyn = pair.bodyA.isStatic ? pair.bodyB : pair.bodyA;
         const speed = Math.hypot(dyn.velocity.x, dyn.velocity.y);
-        if (speed < 1.2) continue;
+        if (speed < 1.35) continue;
         const contact = pair.collision.supports?.[0];
         const cx = contact?.x ?? dyn.position.x;
         const cy = contact?.y ?? dyn.bounds.max.y;
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 4; i++) {
+          if (splashesRef.current.length + confettiRef.current.length >= 60) {
+            splashesRef.current.shift();
+          }
           splashesRef.current.push({
             x: cx + (Math.random() - 0.5) * 18,
             y: cy,
@@ -1180,7 +1188,25 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           (aimTargetAngleRef.current - aimAngleRef.current) * Math.min(1, dt * 18);
       }
 
-      // Step Matter.js physics with stable 16.67ms substeps
+      // Strong angular damping (equivalent to angularDamping: 0.85) + micro-jitter suppression
+      const bodiesPre = Matter.Composite.allBodies(engine.world);
+      for (const b of bodiesPre) {
+        if (b.isStatic || b.isSleeping) continue;
+        const meta = metaMapRef.current.get(b.id);
+        const angDamp = Math.pow(0.15, dt * 4.5);
+        Matter.Body.setAngularVelocity(b, b.angularVelocity * angDamp);
+        if (meta && now - meta.droppedAt > 240) {
+          const spd = Math.hypot(b.velocity.x, b.velocity.y);
+          if (spd < 0.14 && Math.abs(b.angularVelocity) < 0.025) {
+            Matter.Body.setVelocity(b, {
+              x: b.velocity.x * 0.45,
+              y: b.velocity.y * 0.45,
+            });
+          }
+        }
+      }
+
+      // Step Matter.js physics
       Matter.Engine.update(engine, dt * 1000);
 
       // Smooth rising camera interpolation
@@ -1207,8 +1233,10 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         if (b.bounds.min.y < highestY) {
           highestY = b.bounds.min.y;
         }
-        const spd = Math.hypot(b.velocity.x, b.velocity.y);
-        maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 18);
+        if (!b.isSleeping) {
+          const spd = Math.hypot(b.velocity.x, b.velocity.y);
+          maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 14);
+        }
       }
 
       highestStackedYRef.current = highestY;
@@ -1226,9 +1254,12 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         soundManager.play('splash');
         triggerHaptic([60, 40, 90]);
 
-        // Spawn big water splash at fall point
+        // Spawn water splash at fall point (capped at <= 60 active particles)
         const splashX = Math.max(30, Math.min(WORLD_W - 30, fellBody.body.position.x));
-        for (let i = 0; i < 22; i++) {
+        for (let i = 0; i < 18; i++) {
+          if (splashesRef.current.length + confettiRef.current.length >= 60) {
+            splashesRef.current.shift();
+          }
           const ang = -Math.PI * Math.random();
           const spd = 90 + Math.random() * 210;
           splashesRef.current.push({
@@ -1279,11 +1310,14 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           settleTimerRef.current = 0;
         }
 
-        if (settleTimerRef.current >= 0.45 || settlingElapsedRef.current >= 3.8) {
-          // Safe placement! Award player points + confetti/dust burst
+        if (settleTimerRef.current >= 0.4 || settlingElapsedRef.current >= 3.5) {
+          // Safe placement! Award player points + confetti/dust burst (capped at <= 60 active particles)
           const activeP = players[turnIdxRef.current];
           const confettiPalette = ['#FACC15', '#34D399', '#38BDF8', '#F472B6', '#FB923C'];
-          for (let i = 0; i < 16; i++) {
+          for (let i = 0; i < 14; i++) {
+            if (splashesRef.current.length + confettiRef.current.length >= 60) {
+              confettiRef.current.shift();
+            }
             const ang = -Math.PI * Math.random();
             const spd = 70 + Math.random() * 140;
             confettiRef.current.push({
@@ -1532,7 +1566,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           {/* Active Turn Banner */}
           <div
             dir="rtl"
-            className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-2xl bg-slate-950/80 border-2 border-white/25 px-3.5 py-1.5 shadow-xl backdrop-blur-md max-w-[92%]"
+            className="pointer-events-none fixed top-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-2xl bg-slate-950/90 border-2 border-white/25 px-3.5 py-1.5 shadow-xl max-w-[92%]"
           >
             <span
               style={{ backgroundColor: activeColor.hex }}
@@ -1564,7 +1598,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
                 <div
                   key={p.id}
                   style={{ borderColor: isTurn ? c.hex : 'rgba(255,255,255,0.2)' }}
-                  className={`shrink-0 flex items-center gap-1 rounded-full bg-slate-950/75 border-2 px-2 py-0.5 text-[11px] font-black text-white backdrop-blur-sm ${
+                  className={`shrink-0 flex items-center gap-1 rounded-full bg-slate-950/88 border-2 px-2 py-0.5 text-[11px] font-black text-white ${
                     isOut ? 'opacity-40 line-through' : ''
                   }`}
                 >
@@ -1587,7 +1621,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
             className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2 pointer-events-none"
           >
             {turnStage === 'AIMING' && (
-              <div className="px-3 py-1 rounded-full bg-slate-950/65 border border-white/20 text-[11px] font-extrabold text-white/95 whitespace-nowrap backdrop-blur-sm">
+              <div className="px-3 py-1 rounded-full bg-slate-950/85 border border-white/20 text-[11px] font-extrabold text-white/95 whitespace-nowrap">
                 اسحب يمين/شمال للتحريك · المس الحيوان أو نقرتين للتدوير 🔄
               </div>
             )}

@@ -611,6 +611,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
     if (phase !== 'PLAYING') return;
 
     let rafId = 0;
+    let shakeTimerId: number | null = null;
     let lastUiSync = 0;
 
     const step = (now: number) => {
@@ -720,7 +721,8 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
             soundManager.play('sting');
             triggerHaptic(150);
             setShaking(true);
-            window.setTimeout(() => setShaking(false), 260);
+            if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+            shakeTimerId = window.setTimeout(() => setShaking(false), 260);
             popupsRef.current.push({
               x: bird.x + (hitLeft ? 26 : -26),
               y: bird.y - 12,
@@ -770,7 +772,10 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
     };
 
     rafId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+    };
   }, [phase, matchSeconds, currentRound, drawScene, finishRound]);
 
   const handleCornerFlap = (playerIdx: number) => {

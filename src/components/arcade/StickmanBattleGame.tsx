@@ -167,7 +167,7 @@ interface StickmanFighter {
   wasOnGround: boolean;
   lastGroundedAt: number;
   jumpsLeft: number;
-  jumpLatch: boolean;
+  jumpChargeSec: number;
   koAt: number;
 }
 
@@ -681,6 +681,25 @@ function drawStickmanFighter(
     ctx.fill();
   }
   ctx.restore();
+
+  // Jump Charge Progress Ring (0 -> 2.0s continuous upward hold)
+  if (f.jumpChargeSec > 0.08) {
+    const jumpProg = Math.min(1, f.jumpChargeSec / 2.0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(250, 204, 21, 0.25)';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y - 4, 23, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#FACC15';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(f.x, f.y - 4, 23, -Math.PI / 2, -Math.PI / 2 + jumpProg * Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   // Ducking Shield Charge Progress Ring (0 -> 3s)
   if (f.duckChargeSec > 0.08 && !hasBubbleShield) {
@@ -1433,6 +1452,10 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
 
   const spawnSparks = useCallback((x: number, y: number, color: string, count = 10) => {
     for (let i = 0; i < count; i++) {
+      if (sparksRef.current.length + dustRef.current.length >= 60) {
+        if (sparksRef.current.length > 0) sparksRef.current.shift();
+        else dustRef.current.shift();
+      }
       const a = Math.random() * Math.PI * 2;
       const spd = 80 + Math.random() * 220;
       const life = 0.25 + Math.random() * 0.25;
@@ -1451,6 +1474,10 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
 
   const spawnDust = useCallback((x: number, y: number, count = 6, color = 'rgba(226, 232, 240, 0.85)') => {
     for (let i = 0; i < count; i++) {
+      if (sparksRef.current.length + dustRef.current.length >= 60) {
+        if (dustRef.current.length > 0) dustRef.current.shift();
+        else sparksRef.current.shift();
+      }
       const life = 0.25 + Math.random() * 0.22;
       dustRef.current.push({
         x: x + (Math.random() - 0.5) * 14,
@@ -1551,7 +1578,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         wasOnGround: false,
         lastGroundedAt: 0,
         jumpsLeft: 2,
-        jumpLatch: false,
+        jumpChargeSec: 0,
         koAt: 0,
       };
     });
@@ -1959,33 +1986,36 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           }
           f.aimAngle = Math.atan2(joy.dy, joy.dx);
 
-          // Responsive jump when joystick pushed upward (dy < -0.5) + coyote time & double jump
-          if (joy.dy < -0.5) {
-            if (!f.jumpLatch && (canCoyoteJump || f.jumpsLeft > 0)) {
+          // 2.0-second continuous upward hold jump (dy < -0.6 while mag > 0.45)
+          const holdingJumpUp = !isRagdoll && joy.mag > 0.45 && joy.dy < -0.6;
+          if (holdingJumpUp && (canCoyoteJump || f.jumpsLeft > 0)) {
+            f.jumpChargeSec += dt;
+            if (f.jumpChargeSec >= 2.0) {
+              f.jumpChargeSec = 0;
               const isGroundJump = canCoyoteJump;
-              f.vy = isGroundJump ? -485 : -435;
+              f.vy = isGroundJump ? -495 : -445;
               f.onGround = false;
               f.jumpsLeft = isGroundJump ? 1 : 0;
-              f.jumpLatch = true;
               soundManager.play('bounce');
+              triggerHaptic(22);
               spawnDust(f.x, f.y + 22, 7);
-              spawnSparks(f.x, f.y + 18, '#FFFFFF', 4);
+              spawnSparks(f.x, f.y + 18, '#FACC15', 5);
               if (!isGroundJump) {
                 shockwavesRef.current.push({
                   x: f.x,
                   y: f.y + 20,
                   radius: 6,
                   maxRadius: 28,
-                  color: '#FFFFFF',
+                  color: '#FACC15',
                   life: 0.75,
                 });
               }
             }
-          } else if (joy.dy > -0.22) {
-            f.jumpLatch = false;
+          } else {
+            f.jumpChargeSec = 0;
           }
         } else {
-          f.jumpLatch = false;
+          f.jumpChargeSec = 0;
         }
 
         // Ground-Duck Energy Shield (hold dy > 0.6 while on solid ground for 3 continuous seconds -> 4s bubble shield, 2/2 uses)
@@ -2863,7 +2893,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="حرب الستيك مان"
-            subtitle="حرك الجويستيك للضرب والتصويب وارفع لفوق للنط! آخر مقاتل صامد يكسب الجولة!"
+            subtitle="حرك الجويستيك للضرب والتصويب واثبت لفوق ثانيتين للنط! آخر مقاتل صامد يكسب الجولة!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#0284C7] via-[#6366F1] to-[#F97316]"
             icon={<Swords className="w-12 h-12 text-white drop-shadow" />}
@@ -2979,7 +3009,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               return (
                 <div
                   key={p.id}
-                  className={`flex items-center gap-1 rounded-full bg-slate-950/75 border border-white/25 px-2.5 py-0.5 text-[11px] font-black text-white shadow backdrop-blur-sm ${
+                  className={`flex items-center gap-1 rounded-full bg-slate-950/90 border border-white/25 px-2.5 py-0.5 text-[11px] font-black text-white shadow ${
                     hp <= 0 ? 'opacity-40 line-through' : ''
                   }`}
                 >
@@ -3005,11 +3035,11 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
               <div className="text-8xl font-black text-white drop-shadow-[0_6px_0_#111827] tabular-nums">
                 {countdownNum}
               </div>
-              <div className="mt-3 rounded-2xl bg-slate-900/85 border border-white/25 px-4 py-2 text-sm sm:text-base font-black text-white shadow-lg">
+              <div className="mt-3 rounded-2xl bg-slate-900/90 border border-white/25 px-4 py-2 text-sm sm:text-base font-black text-white shadow-lg">
                 سلاح الجولة: {weaponMeta.emoji} {weaponMeta.name}
               </div>
               <p className="mt-2 text-xs font-extrabold text-white/85">
-                ارفع الجويستيك لفوق للنط · انزل لتحت ٣ ثواني لتفعيل درع الطاقة! 🛡️
+                اثبت الجويستيك لفوق ثانيتين للنط ⬆️ · انزل لتحت ٣ ثواني لدرع الطاقة! 🛡️
               </p>
             </div>
           )}
@@ -3040,10 +3070,10 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                   style={{
                     borderColor: theme.hex,
                     backgroundColor: isActive
-                      ? 'rgba(15, 23, 42, 0.45)'
-                      : 'rgba(15, 23, 42, 0.30)',
+                      ? 'rgba(15, 23, 42, 0.72)'
+                      : 'rgba(15, 23, 42, 0.52)',
                   }}
-                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] backdrop-blur-[2px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
+                  className="pointer-events-none relative w-full h-full rounded-full border-[3.5px] shadow-[0_4px_0_rgba(0,0,0,0.35)] flex items-center justify-center"
                 >
                   <span
                     className={`pointer-events-none absolute -top-5 px-2 py-0.5 rounded-full bg-black/75 text-[10px] font-black text-white truncate max-w-[110px] ${
