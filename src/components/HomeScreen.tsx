@@ -449,11 +449,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       </main>
 
       <footer dir="ltr" className="w-full max-w-xl mx-auto px-4 pb-5 pt-2 text-center select-none">
-        <p className="font-bold text-sm text-[#1E293B] dark:text-[#F8FAFC]">
-          Developed by Mina Mansour
-        </p>
-        <p className="font-normal text-xs text-[#64748B] dark:text-[#94A3B8] opacity-75 mt-0.5">
-          Ibrahim Mina
+        <p className="font-extrabold text-xs sm:text-sm text-[#64748B] dark:text-[#94A3B8]">
+          Made by Ibrahim & Mina
         </p>
       </footer>
 
