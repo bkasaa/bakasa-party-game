@@ -76,8 +76,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
     phase === 'DRAW_STROKE' ||
     phase === 'VOTING' ||
     phase === 'FORGER_IDENTITY_REVEAL' ||
-    phase === 'FORGER_FINAL_GUESS' ||
-    phase === 'ROUND_REVEAL';
+    phase === 'FORGER_FINAL_GUESS';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -326,8 +325,8 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
             </p>
 
             {players.length < 3 && (
-              <div className="w-full max-w-sm rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-2.5 text-xs font-extrabold text-[#B45309] dark:text-amber-300 mb-5">
-                ملاحظة: يفضّل ٣ لاعبين أو أكتر لمتعة المزور، لكن تقدروا تلعبوا بـ ٢ عادي!
+              <div className="w-full max-w-sm rounded-2xl bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-800 px-4 py-2.5 text-xs font-extrabold text-[#B45309] dark:text-amber-300 mb-5 tabular-nums">
+                ملاحظة: يفضّل 3 لاعبين أو أكتر لمتعة المزور، لكن تقدروا تلعبوا بـ 2 عادي!
               </div>
             )}
 
@@ -788,11 +787,11 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
               <div className="text-xs font-extrabold text-[#FF6B4A] mb-1">
                 القسم: {category.name}
               </div>
-              <h2 className="text-lg sm:text-xl font-black text-[#1E293B] dark:text-white">
-                {forgerPlayer.name} — اختار الكلمة السرية من الـ ١٦ اختيار!
+              <h2 className="text-lg sm:text-xl font-black text-[#1E293B] dark:text-white tabular-nums">
+                {forgerPlayer.name} — اختار الكلمة السرية من الـ 16 اختيار!
               </h2>
-              <p className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1">
-                لو اخترت الكلمة الصح هتكسب +١٠٠ نقطة!
+              <p className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1 tabular-nums">
+                لو اخترت الكلمة الصح هتكسب +100 نقطة!
               </p>
             </div>
 
@@ -855,14 +854,14 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
                     ? 'محدش قفش المزور!'
                     : 'قفشتوا المزور!'}
               </h2>
-              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5">
+              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5 tabular-nums">
                 {forgerEscapedVotes && forgerGuessedRight
-                  ? `${forgerPlayer.name} هرب من التصويت وخمن الكلمة (+٢٠٠ نقطة!)`
+                  ? `${forgerPlayer.name} هرب من التصويت وخمن الكلمة (+200 نقطة!)`
                   : forgerGuessedRight
-                    ? `${forgerPlayer.name} كسب +١٠٠ نقطة في الفرصة الأخيرة`
+                    ? `${forgerPlayer.name} كسب +100 نقطة في الفرصة الأخيرة`
                     : forgerEscapedVotes
-                      ? `محدش صوّت ضد ${forgerPlayer.name} فكسب +١٠٠ نقطة إضافية`
-                      : `كل اللي صوّتوا ضد ${forgerPlayer.name} كسبوا +١٠٠ نقطة`}
+                      ? `محدش صوّت ضد ${forgerPlayer.name} فكسب +100 نقطة إضافية`
+                      : `كل اللي صوّتوا ضد ${forgerPlayer.name} كسبوا +100 نقطة`}
               </p>
 
               <div className="rounded-2xl bg-[#FFF9F0] dark:bg-[#0F172A] border-2 border-[#E7DEC8] dark:border-[#334155] p-4 mb-5 flex flex-col gap-1.5">
@@ -892,7 +891,7 @@ export const ForgerGameFlow: React.FC<ForgerGameFlowProps> = ({
                           delta > 0 ? 'text-[#059669] dark:text-emerald-400' : 'text-[#94A3B8]'
                         }`}
                       >
-                        {delta > 0 ? `+${delta} نقطة` : '٠ نقطة'}
+                        {delta > 0 ? `+${delta} نقطة` : '0 نقطة'}
                       </span>
                     </div>
                   );

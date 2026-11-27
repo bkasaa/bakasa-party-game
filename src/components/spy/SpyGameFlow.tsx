@@ -25,6 +25,7 @@ import { BANNER_COLOR_CLASSES, SPY_CATEGORIES } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player, RoundDelta, SpyCategory, SpyPhase } from '../../types/game';
+import { formatNumber, formatSignedNumber } from '../../utils/formatNumber';
 import { soundManager } from '../../utils/soundManager';
 import { recordSpyCatch } from '../../utils/sessionStats';
 import { getCustomContent } from '../../utils/customContentStorage';
@@ -187,8 +188,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
     phase === 'DISCUSSION' ||
     phase === 'VOTING' ||
     phase === 'SPY_IDENTITY_REVEAL' ||
-    phase === 'SPY_FINAL_GUESS' ||
-    phase === 'ROUND_REVEAL';
+    phase === 'SPY_FINAL_GUESS';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -220,6 +220,10 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
   // Discussion countdown effect
   useEffect(() => {
     if (phase !== 'DISCUSSION' || !isTimerRunning) return;
+    if (secondsLeft <= 0) {
+      setIsTimerRunning(false);
+      return;
+    }
 
     const interval = window.setInterval(() => {
       setSecondsLeft((prev) => {
@@ -228,7 +232,6 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
             timerExpiredPlayedRef.current = true;
             soundManager.play('tickUrgent');
           }
-          setIsTimerRunning(false);
           return 0;
         }
         if (prev <= 11) {
@@ -239,7 +242,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
     }, 1000);
 
     return () => window.clearInterval(interval);
-  }, [phase, isTimerRunning]);
+  }, [phase, isTimerRunning, secondsLeft <= 0]);
 
   const activeSpyCategories = useMemo(
     () =>
@@ -371,34 +374,6 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
     }
   });
 
-  const handleConfirmSpyGuess = guard(() => {
-    if (!selectedSpyGuess) {
-      soundManager.play('error');
-      return;
-    }
-
-    const isCorrect = selectedSpyGuess === secretWord;
-    setSpyGuessedCorrectly(isCorrect);
-
-    const deltas: RoundDelta[] = players.map((p) => {
-      const isSpy = spyIds.includes(p.id);
-      if (isSpy) {
-        return { playerId: p.id, delta: isCorrect ? 100 : 0 };
-      }
-      const pickedIds = votes[p.id] ?? [];
-      const correctPicks = pickedIds.filter((id) => spyIds.includes(id)).length;
-      if (correctPicks > 0) {
-        recordSpyCatch(p.id);
-      }
-      return { playerId: p.id, delta: correctPicks * 100 };
-    });
-
-    setRoundDeltas(deltas);
-    onApplyDeltas(deltas);
-    soundManager.play(isCorrect ? 'victory' : 'next');
-    setPhase('ROUND_REVEAL');
-  });
-
   const voteCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     players.forEach((p) => {
@@ -411,6 +386,58 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
     });
     return counts;
   }, [players, votes]);
+
+  const maxVoteCount = useMemo(
+    () => Math.max(0, ...players.map((p) => voteCounts[p.id] ?? 0)),
+    [players, voteCounts]
+  );
+
+  const topVotedPlayers = useMemo(
+    () =>
+      maxVoteCount > 0
+        ? players.filter((p) => (voteCounts[p.id] ?? 0) === maxVoteCount)
+        : [],
+    [maxVoteCount, players, voteCounts]
+  );
+
+  // Group catches the Spy only when the top-voted player(s) are strictly Spies (no innocent voted out)
+  const didGroupCatchSpy =
+    topVotedPlayers.length > 0 && topVotedPlayers.every((p) => spyIds.includes(p.id));
+  const spyEscapedVote = !didGroupCatchSpy;
+
+  const handleConfirmSpyGuess = guard(() => {
+    if (!selectedSpyGuess) {
+      soundManager.play('error');
+      return;
+    }
+
+    const isCorrect = selectedSpyGuess === secretWord;
+    setSpyGuessedCorrectly(isCorrect);
+
+    const deltas: RoundDelta[] = players.map((p) => {
+      const isSpy = spyIds.includes(p.id);
+      if (isSpy) {
+        const escapeBonus = spyEscapedVote ? 3 : 0;
+        const guessBonus = isCorrect ? 100 : 0;
+        return { playerId: p.id, delta: escapeBonus + guessBonus };
+      }
+      if (spyEscapedVote) {
+        // Group voted out an innocent or failed to catch the Spy -> fooled players get 0
+        return { playerId: p.id, delta: 0 };
+      }
+      const pickedIds = votes[p.id] ?? [];
+      const correctPicks = pickedIds.filter((id) => spyIds.includes(id)).length;
+      if (correctPicks > 0) {
+        recordSpyCatch(p.id);
+      }
+      return { playerId: p.id, delta: correctPicks * 100 };
+    });
+
+    setRoundDeltas(deltas);
+    onApplyDeltas(deltas);
+    soundManager.play(isCorrect || spyEscapedVote ? 'victory' : 'next');
+    setPhase('ROUND_REVEAL');
+  });
 
   const formatClock = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -513,21 +540,21 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                           soundManager.play('click');
                           setSpyCount(count);
                         }}
-                        className={`min-w-[62px] min-h-[36px] px-2.5 rounded-xl text-xs sm:text-sm font-black transition-colors disabled:opacity-35 disabled:cursor-not-allowed ${
+                        className={`min-w-[62px] min-h-[36px] px-2.5 rounded-xl text-xs sm:text-sm font-black tabular-nums transition-colors disabled:opacity-35 disabled:cursor-not-allowed ${
                           effectiveSpyCount === count
                             ? 'bg-[#FF6B4A] text-white shadow-[0_3px_0_#D94E30]'
                             : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] hover:text-[#1E293B] dark:hover:text-white'
                         }`}
                       >
-                        {count === 1 ? '١ جاسوس' : count === 2 ? '٢ جواسيس' : '٣ جواسيس'}
+                        {count === 1 ? '1 جاسوس' : count === 2 ? '2 جواسيس' : '3 جواسيس'}
                       </button>
                     );
                   })}
                 </div>
               </div>
               {maxSpies < 3 && (
-                <p className="text-[11px] font-bold text-[#64748B] dark:text-[#94A3B8] text-right">
-                  * ٢ جواسيس من ٤ لاعبين فأكثر · ٣ جواسيس من ٦ لاعبين فأكثر
+                <p className="text-[11px] font-bold text-[#64748B] dark:text-[#94A3B8] text-right tabular-nums">
+                  * 2 جواسيس من 4 لاعبين فأكثر · 3 جواسيس من 6 لاعبين فأكثر
                 </p>
               )}
             </div>
@@ -846,7 +873,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                   }}
                   className="min-h-[46px] px-4 rounded-xl bg-[#FFF9F0] dark:bg-[#0F172A] hover:bg-[#FFF1DC] dark:hover:bg-[#334155] border-2 border-[#E7DEC8] dark:border-[#334155] text-[#1E293B] dark:text-white font-bold text-sm tabular-nums transition-colors"
                 >
-                  +١ دقيقة
+                  +1 دقيقة
                 </button>
               </div>
 
@@ -967,6 +994,20 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                 ))}
               </div>
 
+              <div
+                className={`rounded-2xl px-3.5 py-2.5 mb-3 text-xs sm:text-sm font-black border tabular-nums ${
+                  didGroupCatchSpy
+                    ? 'bg-[#ECFDF5] dark:bg-emerald-950/50 border-[#A7F3D0] dark:border-emerald-800 text-[#047857] dark:text-emerald-300'
+                    : 'bg-[#FFF1F2] dark:bg-rose-950/50 border-[#FECDD3] dark:border-rose-800 text-[#BE123C] dark:text-rose-200'
+                }`}
+              >
+                {didGroupCatchSpy
+                  ? 'الشلة قفشت الجاسوس في التصويت! 🕵️‍♂️✅'
+                  : topVotedPlayers.length === 1 && !spyIds.includes(topVotedPlayers[0].id)
+                    ? `الشلة صوّتت على ${topVotedPlayers[0].name} (بريء)! الجاسوس هرب وكسب +3 نقاط 😈`
+                    : 'الشلة فشلت تمسك الجاسوس في التصويت! الجاسوس كسب +3 نقاط 😈'}
+              </div>
+
               <p className="text-sm font-bold text-[#B45309] dark:text-[#FCD34D] mb-4">
                 الكلمة السرية لسه مخفية — قدام الجاسوس فرصة أخيرة يخمنها!
               </p>
@@ -988,8 +1029,8 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                         {p.name}{' '}
                         {isSpy && <span className="text-[#E11D48] dark:text-rose-400 font-black">(جاسوس)</span>}
                       </span>
-                      <span className="text-[#64748B] dark:text-[#94A3B8] truncate">
-                        اختار: {pickedNames || '—'} ({voteCounts[p.id] ?? 0} صوت)
+                      <span className="text-[#64748B] dark:text-[#94A3B8] truncate tabular-nums">
+                        اختار: {pickedNames || '—'} ({formatNumber(voteCounts[p.id] ?? 0)} صوت)
                       </span>
                     </div>
                   );
@@ -1028,8 +1069,8 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                   ? `${spyNamesText} — اتفقوا واختاروا الكلمة السرية!`
                   : `${spyNamesText} — اختار الكلمة السرية الصح!`}
               </h2>
-              <p className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1">
-                لو اخترت الكلمة الصح هتكسب +١٠٠ نقطة!
+              <p className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1 tabular-nums">
+                لو اخترت الكلمة الصح هتكسب +100 نقطة!
               </p>
             </div>
 
@@ -1073,12 +1114,12 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
             <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-6 animate-reveal-3s">
               <div
                 className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center ${
-                  spyGuessedCorrectly
+                  spyGuessedCorrectly || spyEscapedVote
                     ? 'bg-[#FFFBEB] dark:bg-amber-950/50 border-2 border-[#FDE68A] dark:border-amber-700 text-[#D97706] dark:text-amber-400'
                     : 'bg-[#ECFDF5] dark:bg-emerald-950/50 border-2 border-[#A7F3D0] dark:border-emerald-700 text-[#059669] dark:text-emerald-400'
                 }`}
               >
-                {spyGuessedCorrectly ? (
+                {spyGuessedCorrectly || spyEscapedVote ? (
                   <Sparkles className="w-9 h-9" />
                 ) : (
                   <ShieldAlert className="w-9 h-9" />
@@ -1087,13 +1128,21 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
 
               <h2 className="text-2xl font-black text-[#1E293B] dark:text-white mb-1">
                 {spyGuessedCorrectly
-                  ? 'عاش! الجاسوس خمن الكلمة صح!'
-                  : 'الجاسوس معرفش الكلمة السرية!'}
+                  ? spyEscapedVote
+                    ? 'الجاسوس خدعكم وخمن الكلمة صح!'
+                    : 'عاش! الجاسوس خمن الكلمة صح!'
+                  : spyEscapedVote
+                    ? 'الجاسوس هرب من التصويت وكسب +3 نقاط!'
+                    : 'الجاسوس معرفش الكلمة السرية!'}
               </h2>
-              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5">
+              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5 tabular-nums">
                 {spyGuessedCorrectly
-                  ? `${spyNamesText} كسب +١٠٠ نقطة في الفرصة الأخيرة`
-                  : `${spyNamesText} اختار "${selectedSpyGuess}" وخسر الفرصة الأخيرة`}
+                  ? spyEscapedVote
+                    ? `${spyNamesText} كسب +3 (هروب من التصويت) و+100 (تخمين الكلمة)!`
+                    : `${spyNamesText} كسب +100 نقطة في الفرصة الأخيرة`
+                  : spyEscapedVote
+                    ? `${spyNamesText} خدع الشلة في التصويت وكسب +3 نقاط (واختار "${selectedSpyGuess}" غلط)`
+                    : `${spyNamesText} اختار "${selectedSpyGuess}" وخسر الفرصة الأخيرة`}
               </p>
 
               <div className="rounded-2xl bg-[#FFF9F0] dark:bg-[#0F172A] border-2 border-[#E7DEC8] dark:border-[#334155] p-4 mb-5 flex flex-col gap-1.5">
@@ -1125,7 +1174,7 @@ export const SpyGameFlow: React.FC<SpyGameFlowProps> = ({
                           delta > 0 ? 'text-[#059669] dark:text-emerald-400' : 'text-[#94A3B8]'
                         }`}
                       >
-                        {delta > 0 ? `+${delta} نقطة` : '٠ نقطة'}
+                        {delta > 0 ? `${formatSignedNumber(delta)} نقطة` : `${formatNumber(0)} نقطة`}
                       </span>
                     </div>
                   );

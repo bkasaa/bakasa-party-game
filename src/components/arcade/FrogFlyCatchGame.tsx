@@ -294,7 +294,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
 
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -772,7 +772,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="صيد الضفادع"
-            subtitle={`اضغط زاويتك في اللحظة الصح لتصطاد الدبان (+١) والذهبيات (+٣) وتتفادى الدبور (-٢)!`}
+            subtitle={`اضغط زاويتك في اللحظة الصح لتصطاد الدبان (+1) والذهبيات (+3) وتتفادى الدبور (-2)!`}
             players={players}
             accentBgClass="bg-gradient-to-br from-[#0369a1] to-[#10b981]"
             icon={
@@ -789,9 +789,9 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل جولة:"
             durationOptions={[
-              { value: 25, label: '٢٥ ثانية' },
-              { value: 30, label: '٣٠ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
+              { value: 25, label: '25 ثانية' },
+              { value: 30, label: '30 ثانية' },
+              { value: 45, label: '45 ثانية' },
             ]}
             defaultDuration={30}
             onStartSeries={(rounds, secs) => {
@@ -837,7 +837,7 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
                 {countdownNum}
               </div>
               <div className="mt-3 text-sm sm:text-base font-black text-white/95">
-                ظبّط توقيت الدوران واصطاد الدبان! (ذهبية +٣ · دبور -٢)
+                ظبّط توقيت الدوران واصطاد الدبان! (ذهبية +3 · دبور -2)
               </div>
             </div>
           )}

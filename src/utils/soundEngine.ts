@@ -338,6 +338,10 @@ class SoundEngine {
 
   private resumeMusicLoop(): void {
     if (!this.activeMusic || this.muted || this.musicMuted) return;
+    if (this.musicTimer !== null) {
+      window.clearInterval(this.musicTimer);
+      this.musicTimer = null;
+    }
     const ctx = this.getContext();
     if (!ctx) return;
 

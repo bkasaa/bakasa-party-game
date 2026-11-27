@@ -383,7 +383,7 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
   const finishedRef = useRef<boolean>(false);
 
   const placements = getCornerPlacements(players.length);
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
   const themeIdx = (stage - 1) % STAGE_THEMES.length;
   const goHome = useGoHome();
   const stageTheme = STAGE_THEMES[themeIdx];
@@ -944,9 +944,9 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل مرحلة:"
             durationOptions={[
-              { value: 25, label: '٢٥ ثانية' },
-              { value: 30, label: '٣٠ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
+              { value: 25, label: '25 ثانية' },
+              { value: 30, label: '30 ثانية' },
+              { value: 45, label: '45 ثانية' },
             ]}
             defaultDuration={30}
             onStartSeries={(rounds, secs) => {

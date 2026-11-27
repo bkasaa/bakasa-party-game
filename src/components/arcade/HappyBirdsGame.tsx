@@ -322,7 +322,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
 
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -669,7 +669,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
           popupsRef.current.push({
             x: bird.x,
             y: bird.y - 34,
-            text: '🛡️ درع ٣ث!',
+            text: '🛡️ درع 3ث!',
             color: '#7dd3fc',
             life: 1.1,
           });
@@ -726,7 +726,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
             popupsRef.current.push({
               x: bird.x + (hitLeft ? 26 : -26),
               y: bird.y - 12,
-              text: '💥 ٣ث!',
+              text: '💥 3ث!',
               color: '#f87171',
               life: 1.2,
             });
@@ -748,7 +748,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
             popupsRef.current.push({
               x: st.x,
               y: st.y - 10,
-              text: '+١٠',
+              text: '+10',
               color: '#fde047',
               life: 1.1,
             });
@@ -798,7 +798,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="الطيور الطائرة"
-            subtitle="اضغط زاويتك عشان تطيّر العصفور، اجمع النجوم (+١٠) وابعد عن أشواك الحيطان!"
+            subtitle="اضغط زاويتك عشان تطيّر العصفور، اجمع النجوم (+10) وابعد عن أشواك الحيطان!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#0284c7] to-[#38bdf8]"
             icon={<Bird className="w-12 h-12 text-white" />}
@@ -806,9 +806,9 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل جولة:"
             durationOptions={[
-              { value: 30, label: '٣٠ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
-              { value: 60, label: '٦٠ ثانية' },
+              { value: 30, label: '30 ثانية' },
+              { value: 45, label: '45 ثانية' },
+              { value: 60, label: '60 ثانية' },
             ]}
             defaultDuration={30}
             onStartSeries={(rounds, secs) => {
@@ -855,7 +855,7 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
               </div>
               <div className="mt-3 text-sm sm:text-base font-black text-white/95 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-yellow-300" />
-                <span>نجمة (+١٠) · بقاء (+٢/ث) · درع حماية ٣ث بعد العودة!</span>
+                <span>نجمة (+10) · بقاء (+2/ث) · درع حماية 3ث بعد العودة!</span>
               </div>
             </div>
           )}

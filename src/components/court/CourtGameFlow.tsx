@@ -13,10 +13,10 @@ import { BANNER_COLOR_CLASSES } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player } from '../../types/game';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { resolvePoolWithCustom } from '../../utils/customContentStorage';
 import { pickUnseenItem } from '../../utils/usedItemsMemory';
-import { ConfirmModal } from '../ConfirmModal';
 import { PlayerAvatar } from '../PlayerAvatar';
 import { TopBar } from '../TopBar';
 
@@ -38,9 +38,8 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
     pickUnseenItem('court_questions', questionPool)
   );
   const [activeDare, setActiveDare] = useState<string | null>(null);
-  const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
 
-  useNavigationGuard(true, () => setShowExitConfirm(true));
+  useNavigationGuard(false, onExitToHub, { blockUnload: false });
 
   const currentPlayer = players[currentPlayerIdx % Math.max(1, players.length)] ?? players[0];
   const bannerStyle = BANNER_COLOR_CLASSES[currentPlayer?.color ?? 'plum'];
@@ -97,9 +96,9 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
     <div className="min-h-screen flex flex-col">
       <TopBar
         title="محكمة الصحاب"
-        exitVariant="exit"
-        exitLabel="خروج"
-        onExit={() => setShowExitConfirm(true)}
+        exitVariant="back"
+        exitLabel="رجوع"
+        onExit={onExitToHub}
       />
 
       <main className="flex-1 w-full max-w-md mx-auto px-4 pb-8 pt-2 flex flex-col justify-between gap-4">
@@ -134,7 +133,7 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
 
           <div className="rounded-2xl bg-white/90 dark:bg-[#1E293B]/90 border-2 border-[#E7DEC8] dark:border-[#334155] px-3 py-1.5 text-xs font-black text-[#64748B] dark:text-[#94A3B8] tabular-nums flex items-center gap-1.5">
             <Scale className="w-3.5 h-3.5 text-[#8B5CF6]" />
-            <span>سؤال #{turnCount}</span>
+            <span>سؤال #{formatNumber(turnCount)}</span>
           </div>
         </div>
 
@@ -243,19 +242,6 @@ export const CourtGameFlow: React.FC<CourtGameFlowProps> = ({ players, onExitToH
           <ArrowLeft className="w-6 h-6" />
         </button>
       </main>
-
-      <ConfirmModal
-        open={showExitConfirm}
-        title="متأكد إنك عايز تخرج من اللعبة؟"
-        message="عايز ترجع لقائمة ألعاب القعدة؟"
-        confirmLabel="نعم، اخرج"
-        cancelLabel="كمل لعب"
-        onConfirm={() => {
-          setShowExitConfirm(false);
-          onExitToHub();
-        }}
-        onCancel={() => setShowExitConfirm(false)}
-      />
     </div>
   );
 };

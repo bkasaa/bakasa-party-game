@@ -67,10 +67,10 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({ compact = fa
                 تثبيت قعدة الشلة على الآيفون
               </h3>
               <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed mb-5">
-                ١. اضغط على زر <strong className="text-[#0D9488] dark:text-[#2DD4BF]">المشاركة (Share)</strong> في شريط
+                1. اضغط على زر <strong className="text-[#0D9488] dark:text-[#2DD4BF]">المشاركة (Share)</strong> في شريط
                 سفاري السفلي.
                 <br />
-                ٢. انزل لتحت واختار{' '}
+                2. انزل لتحت واختار{' '}
                 <strong className="text-[#059669] dark:text-emerald-400">إضافة إلى الشاشة الرئيسية (Add to Home Screen)</strong>.
               </p>
               <button

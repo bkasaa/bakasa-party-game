@@ -944,7 +944,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
 
   const isRoundActive = phase === 'PLAYING';
   useArcadeTouchLock(isRoundActive, arenaRef);
-  useNavigationGuard(isRoundActive || phase === 'INTER_ROUND', () => setShowExitConfirm(true));
+  useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   const goHome = useGoHome();
 
   useEffect(() => {
@@ -1030,7 +1030,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       } else {
         setSummaryText(
           soleWinnerName
-            ? `الجولة ${roundNum}: صمد ${soleWinnerName} وكسب +٦٠ نقطة!`
+            ? `الجولة ${roundNum}: صمد ${soleWinnerName} وكسب +60 نقطة!`
             : loserName
               ? `الجولة ${roundNum}: وقع برج ${loserName}! الناجون كسبوا نقاط الصمود 💦`
               : `انتهت الجولة ${roundNum}!`

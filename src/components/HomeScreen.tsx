@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   Eraser,
@@ -15,6 +15,7 @@ import { FOOTBALL_GAMES } from '../data/footballData';
 import { HUB_GAMES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
+import { formatNumber } from '../utils/formatNumber';
 import { soundManager } from '../utils/soundManager';
 import { useTheme } from '../utils/themeManager';
 import { getUsedItemsCount, resetAllUsedItems } from '../utils/usedItemsMemory';
@@ -51,12 +52,6 @@ interface HomeScreenProps {
   onOpenSettings?: () => void;
 }
 
-const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-
-function toArabicDigits(num: number): string {
-  return String(num).replace(/\d/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
-}
-
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   playerCount,
   arcadePlayerCount,
@@ -76,8 +71,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [usedCount, setUsedCount] = useState<number>(() => getUsedItemsCount());
   const [resetToast, setResetToast] = useState<string | null>(null);
   const [muted, setMuted] = useState(() => soundManager.isMuted());
+  const closeModalTimerRef = useRef<number | null>(null);
 
   const openRulesModal = () => {
+    if (closeModalTimerRef.current !== null) {
+      window.clearTimeout(closeModalTimerRef.current);
+      closeModalTimerRef.current = null;
+    }
     soundManager.unlock();
     soundManager.play('whoosh');
     setClosingRulesModal(false);
@@ -85,9 +85,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   const closeRulesModal = () => {
+    if (closeModalTimerRef.current !== null) return;
     soundManager.play('whoosh');
     setClosingRulesModal(true);
-    window.setTimeout(() => {
+    closeModalTimerRef.current = window.setTimeout(() => {
+      closeModalTimerRef.current = null;
       setShowRulesModal(false);
       setClosingRulesModal(false);
     }, 180);
@@ -105,6 +107,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   useEffect(() => {
     return soundManager.subscribe(setMuted);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (closeModalTimerRef.current !== null) {
+        window.clearTimeout(closeModalTimerRef.current);
+        closeModalTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -213,10 +224,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
           <div className="relative inline-flex items-center gap-2 rounded-2xl qada-glass-pill px-4 py-1.5 text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC]">
             <Users className="w-4 h-4 text-[#FF6B4A]" />
-            <span className="tabular-nums">من ٢ إلى ٢٠ لاعب</span>
+            <span className="tabular-nums">من 2 إلى 20 لاعب</span>
             <span className="text-[#CBD5E1] dark:text-[#475569]">·</span>
             <span className="text-[#0D9488] dark:text-[#2DD4BF] tabular-nums">
-              {toArabicDigits(totalGamesCount)} لعبة وتحدي
+              {formatNumber(totalGamesCount)} لعبة وتحدي
             </span>
           </div>
         </div>
@@ -246,7 +257,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   ابدأ سهرة كاملة 🏆
                 </div>
                 <div className="text-[11px] sm:text-xs font-extrabold text-[#78350F] truncate">
-                  بطولة متواصلة من ٣ أو ٥ أو ٧ ألعاب وتتويج البطل!
+                  بطولة متواصلة من 3 أو 5 أو 7 ألعاب وتتويج البطل!
                 </div>
               </div>
             </div>
@@ -286,11 +297,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichPartyIcon className="w-8 h-8" />
                 </RichIconBadge>
                 <div className="min-w-0">
-                  <div className="text-xl font-black leading-tight">
-                    ألعاب القعدة (٢–٢٠ لاعب)
+                  <div className="text-xl font-black leading-tight tabular-nums">
+                    ألعاب القعدة (2–20 لاعب)
                   </div>
                   <div className="text-xs sm:text-sm font-bold text-white/95 mt-0.5 tabular-nums truncate">
-                    {toArabicDigits(partyGamesCount)} ألعاب: الجاسوس · بدون كلام · القنبلة ({playerCount} مجهزين)
+                    {formatNumber(partyGamesCount)} ألعاب: الجاسوس · بدون كلام · القنبلة ({formatNumber(playerCount)} مجهزين)
                   </div>
                 </div>
               </div>
@@ -332,7 +343,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="relative mt-3">
                 <div className="text-lg font-black leading-tight">تحدي الشاشة 2D</div>
                 <div className="text-[11px] font-bold text-white/90 mt-1 tabular-nums leading-snug">
-                  {toArabicDigits(arcadeGamesCount)} ألعاب حماسية · {arcadePlayerCount}–٤ و٢٠ بالدور
+                  {formatNumber(arcadeGamesCount)} ألعاب حماسية · {formatNumber(arcadePlayerCount)}–4 و20 بالدور
                 </div>
               </div>
             </button>
@@ -369,7 +380,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="relative mt-3">
                 <div className="text-lg font-black leading-tight">قعدة اللاعيبة ⚽</div>
                 <div className="text-[11px] font-bold text-white/90 mt-1 tabular-nums leading-snug">
-                  {toArabicDigits(footballGamesCount)} تحديات كروية · {playerCount} لاعبين
+                  {formatNumber(footballGamesCount)} تحديات كروية · {formatNumber(playerCount)} لاعبين
                 </div>
               </div>
             </button>
@@ -389,7 +400,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <span className="truncate">كلماتك الخاصة ✍️</span>
             {customTotalCount > 0 && (
               <span className="rounded-lg bg-[#14B8A6] text-white px-1.5 py-0.5 text-[11px] tabular-nums shrink-0">
-                {customTotalCount}
+                {formatNumber(customTotalCount)}
               </span>
             )}
           </button>
@@ -430,7 +441,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Eraser className="w-4 h-4 text-[#F59E0B] shrink-0" />
               <span>إعادة تصفير الأسئلة المحفوظة</span>
               {usedCount > 0 && (
-                <span className="text-[#D94E30] dark:text-[#FB7185] tabular-nums">({usedCount})</span>
+                <span className="text-[#D94E30] dark:text-[#FB7185] tabular-nums">({formatNumber(usedCount)})</span>
               )}
             </button>
           </div>
@@ -493,7 +504,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   alt=""
                   className="w-9 h-9 rounded-xl border-2 border-amber-400/50 shadow-sm object-cover shrink-0"
                 />
-                <span>قواعد الألعاب ({toArabicDigits(totalGamesCount)} لعبة)</span>
+                <span className="tabular-nums">قواعد الألعاب ({formatNumber(totalGamesCount)} لعبة)</span>
               </h2>
               <button
                 type="button"
@@ -511,12 +522,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="pink" size="sm">
                     <RichSpyIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>١. الجاسوس (بره القعدة)</h3>
+                  <h3>1. الجاسوس (بره القعدة)</h3>
                 </div>
-                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
-                  كل اللاعبين بيشوفوا نفس الكلمة السرية ما عدا الجاسوس (من ١ لـ ٣ جواسيس). اسألوا
-                  بعض أسئلة ذكية من غير ما تحرقوا الكلمة، وبعدين صوّتوا، والجاسوس عنده فرصة أخيرة
-                  يخمن الكلمة وياخد +١٠٠ نقطة!
+                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed tabular-nums">
+                  كل اللاعبين بيشوفوا نفس الكلمة السرية ما عدا الجاسوس (من 1 لـ 3 جواسيس). اسألوا
+                  بعض أسئلة ذكية من غير ما تحرقوا الكلمة، وبعدين صوّتوا: لو الشلة صوّتت على لاعب
+                  بريء وفشلت تمسك الجاسوس، الجاسوس بياخد +3 نقط (والمخدوعين 0 نقط)، ولو خمن الكلمة
+                  السرية صح في الفرصة الأخيرة بياخد +100 نقطة!
                 </p>
               </div>
 
@@ -525,7 +537,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="crimson" size="sm">
                     <RichBombQuestionsIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٢. أسئلة القنبلة</h3>
+                  <h3>2. أسئلة القنبلة</h3>
                 </div>
                 <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
                   سؤال سريع مختلف لكل لاعب — جاوب بسرعة ومرر التليفون قبل ما المؤقت السري ينفجر!
@@ -537,7 +549,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="amber" size="sm">
                     <RichBombClassicIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٣. القنبلة</h3>
+                  <h3>3. القنبلة</h3>
                 </div>
                 <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
                   موضوع واحد ثابت طول الجولة وكل لاعب يقول إجابة صح من غير تكرار قبل الانفجار المفاجئ!
@@ -549,10 +561,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="sky" size="sm">
                     <RichDrawIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٤. رسمة في ١٠ ثواني</h3>
+                  <h3>4. رسمة في 10 ثواني</h3>
                 </div>
-                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
-                  ارسم الكلمة بسرعة (مع وضع الشاشة الكاملة) وخلي صاحبك يخمنها في ١٥ ثانية!
+                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed tabular-nums">
+                  ارسم الكلمة بسرعة (مع وضع الشاشة الكاملة) وخلي صاحبك يخمنها في 15 ثانية!
                 </p>
               </div>
 
@@ -561,7 +573,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="emerald" size="sm">
                     <RichForgerIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٥. المزور</h3>
+                  <h3>5. المزور</h3>
                 </div>
                 <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
                   جولة رسم واحدة كل لاعب بخط متصل — والمزور مش عارف الكلمة وبيحاول يندمج!
@@ -573,7 +585,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="royal" size="sm">
                     <RichCourtIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٦. محكمة الصحاب</h3>
+                  <h3>6. محكمة الصحاب</h3>
                 </div>
                 <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
                   صراحة واعترافات بالدور من غير مؤقت — جاوب بصراحة أو اضغط &quot;مش هجاوب — هات عقاب!&quot;.
@@ -585,7 +597,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <RichIconBadge tone="coral" size="sm">
                     <RichHeadsUpIcon className="w-6 h-6" />
                   </RichIconBadge>
-                  <h3>٧. بدون كلام 🎭</h3>
+                  <h3>7. بدون كلام 🎭</h3>
                 </div>
                 <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
                   حط الموبايل على جبهتك وخلي صحابك يمثلوا لك الكلمة! ميل لتحت للصح ✅ ولفوق للتخطي
@@ -600,25 +612,25 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </RichIconBadge>
                   <h3>وضع السهرة الكاملة 🏆</h3>
                 </div>
-                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed">
-                  اختار ٣ أو ٥ أو ٧ ألعاب متواصلة أو شكل السهرة بنفسك، النقط بتتجمع تلقائي وتتوج
+                <p className="text-sm font-bold text-[#334155] dark:text-slate-200 leading-relaxed tabular-nums">
+                  اختار 3 أو 5 أو 7 ألعاب متواصلة أو شكل السهرة بنفسك، النقط بتتجمع تلقائي وتتوج
                   البطل وتنفذ عقاب الخسران في الآخر!
                 </p>
               </div>
 
               <div className="pt-3 border-t border-[#E7DEC8]/70 dark:border-white/10">
-                <div className="text-sm font-black text-[#0D9488] dark:text-[#2DD4BF] mb-3">
-                  ألعاب تحدي الشاشة 2D ({toArabicDigits(arcadeGamesCount)} ألعاب · ٢–٤ أو حتى ٢٠ بالدور):
+                <div className="text-sm font-black text-[#0D9488] dark:text-[#2DD4BF] mb-3 tabular-nums">
+                  ألعاب تحدي الشاشة 2D ({formatNumber(arcadeGamesCount)} ألعاب · 2–4 أو حتى 20 بالدور):
                 </div>
 
-                <div className="flex flex-col gap-2.5 text-xs sm:text-sm font-bold text-[#475569] dark:text-slate-300">
+                <div className="flex flex-col gap-2.5 text-xs sm:text-sm font-bold text-[#475569] dark:text-slate-300 tabular-nums">
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="paint" className="w-6 h-6 shrink-0" />
-                    <span><strong>حرب الرولات:</strong> لوّن أكبر مساحة من الشاشة برولتك في ٣٠ ثانية!</span>
+                    <span><strong>حرب الرولات:</strong> لوّن أكبر مساحة من الشاشة برولتك في 30 ثانية!</span>
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="knife" className="w-6 h-6 shrink-0" />
-                    <span><strong>تحدي السكاكين:</strong> اثبّت ٧ سكاكين في الخشبة الدوارة من غير تصادم.</span>
+                    <span><strong>تحدي السكاكين:</strong> اثبّت 7 سكاكين في الخشبة الدوارة من غير تصادم.</span>
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="frog" className="w-6 h-6 shrink-0" />
@@ -630,7 +642,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="racing" className="w-6 h-6 shrink-0" />
-                    <span><strong>سباق العربيات:</strong> تحكم ٣٦٠° سلس بالجويستيك واجمع التيربو والتجميد!</span>
+                    <span><strong>سباق العربيات:</strong> تحكم 360° سلس بالجويستيك واجمع التيربو والتجميد!</span>
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="chicken" className="w-6 h-6 shrink-0" />
@@ -642,32 +654,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="stickman" className="w-6 h-6 shrink-0" />
-                    <span><strong>حرب الستيك مان:</strong> قتال راجدول بالعرض في ٥ خرائط بأسلحة موقتة ١٢ ثانية!</span>
+                    <span><strong>حرب الستيك مان:</strong> قتال راجدول بالعرض في 5 خرائط بأسلحة موقتة 12 ثانية!</span>
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="balance" className="w-6 h-6 shrink-0" />
-                    <span><strong>برج التوازن (٢–٢٠ لاعب):</strong> حرّك واسقط الحيوانات فوق المنصة الأثرية بالزراير من غير ما تقع!</span>
+                    <span><strong>برج التوازن (2–20 لاعب):</strong> حرّك واسقط الحيوانات فوق المنصة الأثرية بالزراير من غير ما تقع!</span>
                   </div>
                   <div className="rounded-2xl bg-white/60 dark:bg-slate-900/50 border border-[#E7DEC8] dark:border-white/10 p-3 flex items-center gap-2.5">
                     <RichArcadeGameIcon id="khlawis" className="w-6 h-6 shrink-0" />
-                    <span><strong>خلاويص 🕵️‍♂️ (٢–٢٠ لاعب):</strong> استخبى في ٣ خرائط متاهة عملاقة والباحث بيدور عليك في الوضع العادي أو الضلمة 🔦 أو الزومبي 🧟‍♂️!</span>
+                    <span><strong>خلاويص 🕵️‍♂️ (2–20 لاعب):</strong> استخبى في 3 خرائط متاهة عملاقة والباحث بيدور عليك في الوضع العادي أو الضلمة 🔦 أو الزومبي 🧟‍♂️!</span>
                   </div>
                 </div>
               </div>
 
               <div className="pt-3 border-t border-[#E7DEC8]/70 dark:border-white/10">
-                <div className="text-sm font-black text-[#15803D] dark:text-emerald-400 mb-2">
-                  قعدة اللاعيبة ⚽ ({toArabicDigits(footballGamesCount)} تحديات كروية جماعية):
+                <div className="text-sm font-black text-[#15803D] dark:text-emerald-400 mb-2 tabular-nums">
+                  قعدة اللاعيبة ⚽ ({formatNumber(footballGamesCount)} تحديات كروية جماعية):
                 </div>
-                <p className="text-xs sm:text-sm font-bold text-[#475569] dark:text-slate-300 leading-relaxed">
-                  • <strong>جاسوس الكورة:</strong> ٢٢٠+ لاعب محلي وعالمي مع فلتر محلي/أجنبي.<br />
+                <p className="text-xs sm:text-sm font-bold text-[#475569] dark:text-slate-300 leading-relaxed tabular-nums">
+                  • <strong>جاسوس الكورة:</strong> 220+ لاعب محلي وعالمي مع فلتر محلي/أجنبي.<br />
                   • <strong>كلمة السر:</strong> لفات تلميحات بمؤقت لكل لاعب قبل التصويت!<br />
                   • <strong>قول اسم لاعب:</strong> تحدي التوقيت للأندية والمنتخبات.<br />
-                  • <strong>تحدي الـ ٣ في الكورة:</strong> قول ٣ أسماء كروية بسرعة.<br />
+                  • <strong>تحدي الـ 3 في الكورة:</strong> قول 3 أسماء كروية بسرعة.<br />
                   • <strong>خمن في الكورة:</strong> تقسيمة فرق ووصف لاعبين ومدربين وأندية وملاعب.<br />
-                  • <strong>ضربات الجزاء:</strong> اختار من ٣ لـ ١٠ جولات شوطة سرّية ضد الحارس!<br />
+                  • <strong>ضربات الجزاء:</strong> اختار من 3 لـ 10 جولات شوطة سرّية ضد الحارس!<br />
                   • <strong>تحدي المزاد:</strong> اتزايدوا على عدد الأسماء اللي تقدروا تقولوه قبل التايمر.<br />
-                  • <strong>إكس أو الكورة:</strong> شبكة ٣×٣ نادي × شرط بمؤقت وأمثلة مساعدة.
+                  • <strong>إكس أو الكورة:</strong> شبكة 3×3 نادي × شرط بمؤقت وأمثلة مساعدة.
                 </p>
               </div>
             </div>

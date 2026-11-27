@@ -9,6 +9,7 @@ import {
   CornerSlot,
   getCornerPlacements,
 } from '../../types/arcade';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager } from '../../utils/soundManager';
 import { ConfirmModal } from '../ConfirmModal';
 import { TopBar } from '../TopBar';
@@ -112,7 +113,7 @@ export const ArcadeSetupScreen: React.FC<ArcadeSetupScreenProps> = ({
                       : 'bg-[#FFF9F0] dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] hover:bg-[#FFF3E0] dark:hover:bg-[#334155] hover:text-[#1E293B] dark:hover:text-[#F8FAFC] border-2 border-[#E7DEC8] dark:border-[#334155]'
                   }`}
                 >
-                  {count === 2 ? '٢ لاعبين' : count === 3 ? '٣ لاعبين' : '٤ لاعبين'}
+                  {formatNumber(count)} لاعبين
                 </button>
               );
             })}
@@ -209,7 +210,7 @@ export const ArcadeSetupScreen: React.FC<ArcadeSetupScreenProps> = ({
                       style={{ color: theme.textOnColor }}
                       className="text-base font-black tabular-nums"
                     >
-                      {player.score}
+                      {formatNumber(player.score)}
                     </div>
                     <div
                       style={{ color: theme.textOnColor }}

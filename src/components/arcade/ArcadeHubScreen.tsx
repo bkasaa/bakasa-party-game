@@ -3,6 +3,7 @@ import { ChevronLeft, Users } from 'lucide-react';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { ARCADE_COLORS, ArcadePlayer } from '../../types/arcade';
 import { ArcadeGameId } from '../../types/game';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { CardWatermark } from '../CardWatermark';
 import { RichArcadeGameIcon, RichDiceIcon, RichIconBadge } from '../RichGameIcons';
@@ -29,8 +30,8 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
   {
     id: 'khlawis',
     title: 'خلاويص 🕵️‍♂️',
-    subtitle: 'استخبى في ٣ خرائط متاهة عملاقة قبل ما الباحث يكشفك بالكشاف أو الزومبي!',
-    badgeText: '٢ - ٢٠ لاعب · ٣ خرائط + ضلمة 🔦 وزومبي 🧟‍♂️',
+    subtitle: 'استخبى في 3 خرائط متاهة عملاقة قبل ما الباحث يكشفك بالكشاف أو الزومبي!',
+    badgeText: '2 - 20 لاعب · 3 خرائط + ضلمة 🔦 وزومبي 🧟‍♂️',
     bgClass: 'bg-[#7C3AED]',
     borderClass: 'border-[#C4B5FD]/50',
     shadowClass: 'shadow-[0_6px_0_#5B21B6,0_10px_22px_rgba(91,33,182,0.26)]',
@@ -39,8 +40,8 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
   {
     id: 'paint',
     title: 'حرب الرولات',
-    subtitle: 'لوّن أكبر مساحة من الشاشة برولتك في ٣٠ ثانية!',
-    badgeText: '٣٠ ثانية · مساحة اللون',
+    subtitle: 'لوّن أكبر مساحة من الشاشة برولتك في 30 ثانية!',
+    badgeText: '30 ثانية · مساحة اللون',
     bgClass: 'bg-[#FF6B4A]',
     borderClass: 'border-[#FF9278]/50',
     shadowClass: 'shadow-[0_6px_0_#D94E30,0_10px_20px_rgba(217,78,48,0.18)]',
@@ -50,7 +51,7 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
     id: 'knife',
     title: 'تحدي السكاكين',
     subtitle: 'ارمي سكاكينك في الخشبة الدوارة من غير ما تخبط غيرك!',
-    badgeText: 'أول ٧ سكاكين · أو ٣٠ ثانية',
+    badgeText: 'أول 7 سكاكين · أو 30 ثانية',
     bgClass: 'bg-[#EC4899]',
     borderClass: 'border-[#F472B6]/50',
     shadowClass: 'shadow-[0_6px_0_#BE185D,0_10px_20px_rgba(190,24,93,0.18)]',
@@ -60,7 +61,7 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
     id: 'frog',
     title: 'صيد الضفادع',
     subtitle: 'اطلع بلسان الضفدع واصطاد الدبان والذهبيات قبل صحابك!',
-    badgeText: 'أول ١٥ نقطة · جولات متتالية',
+    badgeText: 'أول 15 نقطة · جولات متتالية',
     bgClass: 'bg-[#3B82F6]',
     borderClass: 'border-[#93C5FD]/50',
     shadowClass: 'shadow-[0_6px_0_#1D4ED8,0_10px_20px_rgba(29,78,216,0.18)]',
@@ -69,8 +70,8 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
   {
     id: 'birds',
     title: 'الطيور الطائرة',
-    subtitle: 'رفرف واجمع النجوم (+١٠) وابعد عن أشواك الحيطان!',
-    badgeText: 'رفرفة سريعة · عودة بعد ٣ث',
+    subtitle: 'رفرف واجمع النجوم (+10) وابعد عن أشواك الحيطان!',
+    badgeText: 'رفرفة سريعة · عودة بعد 3ث',
     bgClass: 'bg-[#14B8A6]',
     borderClass: 'border-[#5EEAD4]/50',
     shadowClass: 'shadow-[0_6px_0_#0D9488,0_10px_20px_rgba(13,148,136,0.18)]',
@@ -79,8 +80,8 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
   {
     id: 'racing',
     title: 'سباق العربيات',
-    subtitle: 'حرك الجويستيك ٣٦٠° في الحلبات واجمع التيربو والتجميد!',
-    badgeText: 'لفات سريعة · جويستيك ٣٦٠° وقوى',
+    subtitle: 'حرك الجويستيك 360° في الحلبات واجمع التيربو والتجميد!',
+    badgeText: 'لفات سريعة · جويستيك 360° وقوى',
     bgClass: 'bg-[#F59E0B]',
     borderClass: 'border-[#FDE68A]/60',
     shadowClass: 'shadow-[0_6px_0_#B45309,0_10px_20px_rgba(180,83,9,0.18)]',
@@ -90,7 +91,7 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
     id: 'chicken',
     title: 'اصطياد الدجاج',
     subtitle: 'امسك الدجاج الهربان وارجع بيه لحوشك قبل صحابك!',
-    badgeText: 'جويستيك ٣٦٠° · ٢٠ دجاجة',
+    badgeText: 'جويستيك 360° · 20 دجاجة',
     bgClass: 'bg-[#65A30D]',
     borderClass: 'border-[#BEF264]/50',
     shadowClass: 'shadow-[0_6px_0_#3F6212,0_10px_20px_rgba(63,98,18,0.18)]',
@@ -100,7 +101,7 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
     id: 'soccer',
     title: 'كرة القدم',
     subtitle: 'مراوغة، شوت، وزحلقة على الكورة بمهارة الجويستيك!',
-    badgeText: '١ ضد ١ / ٢ ضد ٢ · أهداف أو وقت',
+    badgeText: '1 ضد 1 / 2 ضد 2 · أهداف أو وقت',
     bgClass: 'bg-[#10B981]',
     borderClass: 'border-[#6EE7B7]/50',
     shadowClass: 'shadow-[0_6px_0_#047857,0_10px_20px_rgba(4,120,87,0.18)]',
@@ -110,7 +111,7 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
     id: 'balance',
     title: 'برج التوازن',
     subtitle: 'دوّر وأسقط الحيوانات بفيزياء واقعية على المنصة من غير ما تقع!',
-    badgeText: '٢ - ٢٠ لاعب · تدوير وكاميرا صاعدة',
+    badgeText: '2 - 20 لاعب · تدوير وكاميرا صاعدة',
     bgClass: 'bg-[#0EA5E9]',
     borderClass: 'border-[#7DD3FC]/50',
     shadowClass: 'shadow-[0_6px_0_#0369A1,0_10px_20px_rgba(3,105,161,0.2)]',
@@ -119,8 +120,8 @@ export const ARCADE_GAMES: ArcadeGameCard[] = [
   {
     id: 'stickman',
     title: 'حرب الستيك مان',
-    subtitle: 'قتال فيزيائي مجنون بـ ٥ خرائط وأسلحة ليزر عشوائية!',
-    badgeText: '٢ - ٤ لاعبين · راجدول وأسلحة',
+    subtitle: 'قتال فيزيائي مجنون بـ 5 خرائط وأسلحة ليزر عشوائية!',
+    badgeText: '2 - 4 لاعبين · راجدول وأسلحة',
     bgClass: 'bg-[#6366F1]',
     borderClass: 'border-[#A5B4FC]/50',
     shadowClass: 'shadow-[0_6px_0_#4338CA,0_10px_20px_rgba(67,56,202,0.22)]',
@@ -219,7 +220,7 @@ export const ArcadeHubScreen: React.FC<ArcadeHubScreenProps> = ({
           <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
             <span className="text-xs font-extrabold text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5">
               <Users className="w-4 h-4 text-[#14B8A6]" />
-              <span className="tabular-nums">التحدي الحالي ({players.length} لاعبين)</span>
+              <span className="tabular-nums">التحدي الحالي ({formatNumber(players.length)} لاعبين)</span>
             </span>
             <button
               type="button"
@@ -250,7 +251,7 @@ export const ArcadeHubScreen: React.FC<ArcadeHubScreenProps> = ({
                       {player.name}
                     </div>
                     <div className="text-[11px] font-extrabold text-[#D94E30] dark:text-[#FF8C73] tabular-nums">
-                      {player.score} نقطة
+                      {formatNumber(player.score)} نقطة
                     </div>
                   </div>
                 </div>

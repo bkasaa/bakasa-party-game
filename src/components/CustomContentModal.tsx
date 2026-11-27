@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Check,
   Flame,
@@ -43,7 +43,7 @@ const TABS: TabMeta[] = [
     label: 'كلمات الجاسوس والمزور والرسم',
     shortLabel: 'كلمات اللعب',
     placeholder: 'مثال: كشري التحرير، شاي بالنعناع، سبيس تون...',
-    hint: 'بتشتغل في الجاسوس، المزور، رسمة في ١٠ ثواني، وبدون كلام!',
+    hint: 'بتشتغل في الجاسوس، المزور، رسمة في 10 ثواني، وبدون كلام!',
     Icon: Layers,
   },
   {
@@ -83,9 +83,23 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const [closing, setClosing] = useState<boolean>(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (open) {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
       setData(getCustomContent());
       setInputValue('');
       setFeedback(null);
@@ -102,9 +116,11 @@ export const CustomContentModal: React.FC<CustomContentModalProps> = ({
   if (!open) return null;
 
   const handleAnimatedClose = () => {
+    if (closeTimerRef.current !== null) return;
     soundManager.play('whoosh');
     setClosing(true);
-    window.setTimeout(() => {
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
       setClosing(false);
       onClose();
     }, 180);

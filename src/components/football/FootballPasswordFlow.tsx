@@ -116,7 +116,8 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
     return [customCat, ...base];
   }, [settings.scope]);
 
-  const isRoundInProgress = phase !== 'READY' && phase !== 'LEADERBOARD';
+  const isRoundInProgress =
+    phase !== 'READY' && phase !== 'ROUND_REVEAL' && phase !== 'LEADERBOARD';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -138,7 +139,9 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
   useEffect(() => {
     if (phase !== 'CLUE_LAP' || turnTimedOut) return;
 
+    let stopped = false;
     const timer = window.setInterval(() => {
+      if (stopped) return;
       const remaining = Math.max(0, deadlineRef.current - Date.now());
       const sec = Math.ceil(remaining / 1000);
       setMsLeft(remaining);
@@ -155,13 +158,18 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
       }
 
       if (remaining <= 0) {
+        stopped = true;
+        window.clearInterval(timer);
         setTurnTimedOut(true);
         soundManager.play('explosion');
         triggerHaptic([60, 40, 80]);
       }
     }, 80);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [phase, turnTimedOut]);
 
   const startGame = guard(() => {
@@ -367,7 +375,7 @@ export const FootballPasswordFlow: React.FC<FootballPasswordFlowProps> = ({
                             : 'bg-[#FFF9F0]/80 dark:bg-[#0F172A]/80 border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8]'
                         }`}
                       >
-                        {c === 1 ? '١ لاعب' : '٢ لاعيبة'}
+                        {c === 1 ? '1 لاعب' : '2 لاعيبة'}
                       </button>
                     ))}
                   </div>

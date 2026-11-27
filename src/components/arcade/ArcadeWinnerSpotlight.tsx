@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { Sparkles, Trophy } from 'lucide-react';
 import { ARCADE_COLORS, ArcadePlayer } from '../../types/arcade';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 
 interface ArcadeWinnerSpotlightProps {
@@ -139,7 +140,7 @@ export const ArcadeWinnerSpotlight: React.FC<ArcadeWinnerSpotlightProps> = ({
                       <span className="text-xl sm:text-2xl font-black truncate">{w.name}</span>
                     </div>
                     <span className="text-base font-black tabular-nums shrink-0 bg-black/20 px-2.5 py-1 rounded-xl">
-                      {pts} نقطة
+                      {formatNumber(pts)} نقطة
                     </span>
                   </div>
                 );

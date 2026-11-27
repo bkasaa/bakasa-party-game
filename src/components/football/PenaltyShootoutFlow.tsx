@@ -89,8 +89,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
   const isMatchInProgress =
     phase === 'KICKER_AIM' ||
     phase === 'KEEPER_DIVE' ||
-    phase === 'ANIMATING' ||
-    phase === 'MATCH_RESULT';
+    phase === 'ANIMATING';
 
   useNavigationGuard(isMatchInProgress, () => {
     setShowExitConfirm(true);
@@ -282,7 +281,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
               </h2>
               <p className="text-xs sm:text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed mb-4">
                 اللاعب اللي بيشوط بيختار الزاوية سرّي (يمين / نص / شمال)، وبعدين الحارس يختار
-                هيرمي فين! الفائز في الـ {totalRounds} جولات يكسب +١٠٠ نقطة.
+                هيرمي فين! الفائز في الـ {totalRounds} جولات يكسب +100 نقطة.
               </p>
 
               {/* Customizable Rounds Selector */}
@@ -671,7 +670,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
 
               {winnerPlayer && (
                 <div className="text-xs font-black text-[#059669] dark:text-emerald-400">
-                  {winnerPlayer.name} كسب +١٠٠ نقطة!
+                  {winnerPlayer.name} كسب +100 نقطة!
                 </div>
               )}
             </div>

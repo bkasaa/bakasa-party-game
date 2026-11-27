@@ -75,8 +75,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
   const challengeDuration = settings.turnSeconds;
   const cycles = Math.max(1, Math.min(3, settings.rounds));
 
-  const isRoundInProgress =
-    phase === 'PASS_TURN' || phase === 'ACTIVE_CHALLENGE' || phase === 'SUMMARY';
+  const isRoundInProgress = phase === 'PASS_TURN' || phase === 'ACTIVE_CHALLENGE';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -85,7 +84,9 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
   useEffect(() => {
     if (phase !== 'ACTIVE_CHALLENGE' || timedOut) return;
 
+    let stopped = false;
     const timer = window.setInterval(() => {
+      if (stopped) return;
       const remaining = Math.max(0, deadlineRef.current - Date.now());
       const sec = Math.ceil(remaining / 1000);
       setMsLeft(remaining);
@@ -102,13 +103,18 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
       }
 
       if (remaining <= 0) {
+        stopped = true;
+        window.clearInterval(timer);
         setTimedOut(true);
         soundManager.play('explosion');
         triggerHaptic([60, 40, 80]);
       }
     }, 80);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [phase, timedOut]);
 
   const startGame = guard(() => {
@@ -198,7 +204,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
   return (
     <div className="min-h-screen flex flex-col">
       <TopBar
-        title={phase === 'LEADERBOARD' ? 'النتيجة' : 'تحدي الـ ٣ في الكورة 🔥'}
+        title={phase === 'LEADERBOARD' ? 'النتيجة' : 'تحدي الـ 3 في الكورة 🔥'}
         exitVariant={isRoundInProgress ? 'exit' : 'back'}
         exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
@@ -214,11 +220,11 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
               </div>
 
               <h2 className="text-2xl font-black text-[#1E293B] dark:text-white mb-2">
-                قول ٣ حاجات في {challengeDuration} ثانية!
+                قول 3 حاجات في {challengeDuration} ثانية!
               </h2>
               <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
-                {scopedPrompts.length} تحدي كروي سريع! في دورك هيطلعلك تحدي ولازم تقول ٣ أسماء صح
-                في {challengeDuration} ثانية بس عشان تكسب +٥٠ نقطة!
+                {scopedPrompts.length} تحدي كروي سريع! في دورك هيطلعلك تحدي ولازم تقول 3 أسماء صح
+                في {challengeDuration} ثانية بس عشان تكسب +50 نقطة!
               </p>
             </div>
 
@@ -295,7 +301,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
             <div className="w-full max-w-md rounded-3xl qada-card p-6 mb-5 text-center">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <span className="text-xs font-black text-[#D97706] dark:text-[#FBBF24]">
-                  تحدي الـ ٣ أسماء
+                  تحدي الـ 3 أسماء
                 </span>
                 <span
                   className={`text-2xl font-black tabular-nums flex items-center gap-1.5 ${
@@ -336,7 +342,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
                 className="w-full min-h-[58px] rounded-2xl bakasa-btn-green text-white text-xl font-black flex items-center justify-center gap-2 transition-transform"
               >
                 <Check className="w-6 h-6" />
-                <span>جابها صح! (+٥٠ نقطة)</span>
+                <span>جابها صح! (+50 نقطة)</span>
               </button>
 
               <button
@@ -362,7 +368,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
               </div>
 
               <h2 className="text-2xl font-black text-[#1E293B] dark:text-white mb-4">
-                نتائج تحدي الـ ٣ في الكورة
+                نتائج تحدي الـ 3 في الكورة
               </h2>
 
               <div className="flex flex-col gap-2 text-right">
@@ -379,7 +385,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
                           delta > 0 ? 'text-[#059669] dark:text-emerald-400' : 'text-[#94A3B8]'
                         }`}
                       >
-                        {delta > 0 ? `+${delta} نقطة` : '٠ نقطة'}
+                        {delta > 0 ? `+${delta} نقطة` : '0 نقطة'}
                       </span>
                     </div>
                   );
@@ -405,7 +411,7 @@ export const FootballThreeGameFlow: React.FC<FootballThreeGameFlowProps> = ({
           <LeaderboardScreen
             players={players}
             deltas={roundDeltas}
-            summaryHeadline="أبطال تحدي الـ ٣ في الكورة ⚽"
+            summaryHeadline="أبطال تحدي الـ 3 في الكورة ⚽"
             isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={() => setPhase('READY')}
             onFinishGame={() => {

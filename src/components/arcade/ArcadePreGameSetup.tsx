@@ -3,6 +3,7 @@ import { ArrowRight, Clock, Home, Layers, Play } from 'lucide-react';
 import { useGoHome } from '../../contexts/NavigationContext';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { ARCADE_COLORS, ArcadePlayer } from '../../types/arcade';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager } from '../../utils/soundManager';
 
 interface DurationOption {
@@ -107,7 +108,7 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
           {onEditPlayers && (
             <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
               <span className="text-xs font-black text-[#64748B] dark:text-[#94A3B8]">
-                اللاعبون المشاركون ({players.length})
+                اللاعبون المشاركون ({formatNumber(players.length)})
               </span>
               <button
                 type="button"
@@ -117,7 +118,7 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
                 }}
                 className="text-xs font-black text-[#0D9488] dark:text-[#2DD4BF] px-2.5 py-1 rounded-xl bg-[#F0FDFA] dark:bg-teal-950/50 border border-[#99F6E4] dark:border-teal-800"
               >
-                تعديل / إضافة لاعبين (٢–٢٠)
+                تعديل / إضافة لاعبين (2–20)
               </button>
             </div>
           )}
@@ -164,7 +165,7 @@ export const ArcadePreGameSetup: React.FC<ArcadePreGameSetupProps> = ({
                         : 'bg-[#FFF9F0] dark:bg-[#0F172A] text-[#64748B] dark:text-[#94A3B8] hover:bg-[#FFF3E0] dark:hover:bg-[#334155] hover:text-[#1E293B] dark:hover:text-[#F8FAFC] border-2 border-[#E7DEC8] dark:border-[#334155]'
                     }`}
                   >
-                    {rounds} جولات
+                    {formatNumber(rounds)} جولات
                   </button>
                 );
               })}

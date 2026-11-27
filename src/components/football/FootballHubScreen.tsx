@@ -9,6 +9,7 @@ import { BANNER_COLOR_CLASSES } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { FootballGameId, Player } from '../../types/game';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
+import { formatNumber } from '../../utils/formatNumber';
 import { CardWatermark } from '../CardWatermark';
 import { PlayerAvatar } from '../PlayerAvatar';
 import {
@@ -27,12 +28,6 @@ interface FootballHubScreenProps {
   onSelectGame: (gameId: FootballGameId) => void;
   onEditPlayers: () => void;
   onBackToHome: () => void;
-}
-
-const ARABIC_DIGITS = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-
-function toArabicDigits(num: number): string {
-  return String(num).replace(/\d/g, (d) => ARABIC_DIGITS[Number(d)] ?? d);
 }
 
 function getFootballToneGradient(id: FootballGameId): string {
@@ -160,7 +155,7 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
                 </h2>
               </div>
               <p className="text-xs sm:text-sm font-bold text-white/90 mt-1 leading-snug tabular-nums">
-                {toArabicDigits(FOOTBALL_GAMES.length)} تحديات كورة جماعية بتشتغل ١٠٠٪ أوفلاين بنفس أسماء الشلة
+                {formatNumber(FOOTBALL_GAMES.length)} تحديات كورة جماعية بتشتغل 100% أوفلاين بنفس أسماء الشلة
               </p>
             </div>
             <RichIconBadge tone="emerald" size="md" floatDelay={0.2}>
@@ -177,7 +172,7 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
           <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
             <span className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5">
               <Users className="w-4 h-4 text-[#16A34A]" />
-              <span>التشكيلة الحالية ({players.length} لاعبين)</span>
+              <span className="tabular-nums">التشكيلة الحالية ({formatNumber(players.length)} لاعبين)</span>
             </span>
             <button
               type="button"
@@ -203,7 +198,7 @@ export const FootballHubScreen: React.FC<FootballHubScreenProps> = ({
                     {player.name}
                   </div>
                   <div className="text-[11px] font-black text-[#059669] dark:text-[#34D399] tabular-nums">
-                    {player.score} نقطة
+                    {formatNumber(player.score)} نقطة
                   </div>
                 </div>
               </div>

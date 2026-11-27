@@ -63,7 +63,7 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const usedPromptIdsRef = useRef<Set<string>>(new Set());
 
-  const isRoundInProgress = phase !== 'READY' && phase !== 'LEADERBOARD';
+  const isRoundInProgress = phase === 'BIDDING' || phase === 'VERIFYING';
   useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
 
   const scopedPrompts = useMemo(() => {
@@ -210,8 +210,8 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
                 </h2>
               </div>
               <p className="text-xs sm:text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
-                بنديكم شرط كروي، وكل واحد يزايد: «أنا أقدر أقول ٥ لاعيبة... لا أنا ٧!». أعلى
-                مزايد بيدخل التايمر ويثبت كلامه، ولو كسب بياخد ١٥ نقطة على كل اسم!
+                بنديكم شرط كروي، وكل واحد يزايد: «أنا أقدر أقول 5 لاعيبة... لا أنا 7!». أعلى
+                مزايد بيدخل التايمر ويثبت كلامه، ولو كسب بياخد 15 نقطة على كل اسم!
               </p>
             </div>
 
@@ -397,7 +397,7 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
                 {progress} <span className="text-2xl text-[#64748B]">/ {targetBid}</span>
               </div>
               <p className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] mt-1">
-                دوس «صح +١» مع كل إجابة صح يقولها {selectedBidder.name}
+                دوس «صح +1» مع كل إجابة صح يقولها {selectedBidder.name}
               </p>
             </div>
 
@@ -407,7 +407,7 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
               className="w-full min-h-[76px] rounded-3xl bakasa-btn-green text-white text-2xl font-black flex items-center justify-center gap-2.5 active:scale-95 transition-transform"
             >
               <Check className="w-7 h-7" />
-              <span>صح +١ ✅</span>
+              <span>صح +1 ✅</span>
             </button>
 
             <button

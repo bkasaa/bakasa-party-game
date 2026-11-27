@@ -1394,8 +1394,8 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
 
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
-  const isArenaMounted = phase === 'COUNTDOWN' || phase === 'PLAYING';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
+  const isArenaMounted = isRoundActive;
   const { isRotatedPortrait } = useForceLandscape(isRoundActive);
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
@@ -2044,7 +2044,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
             bannersRef.current.push({
               x: f.x,
               y: f.y - 48,
-              text: `درع الطاقة! 🛡️ (${f.shieldCharges}/٢)`,
+              text: `درع الطاقة! 🛡️ (${f.shieldCharges}/2)`,
               color: '#67E8F9',
               life: 1.3,
             });
@@ -2645,7 +2645,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
             bannersRef.current.push({
               x: crate.x,
               y: crate.y - 24,
-              text: `${WEAPONS[newWep].emoji} ${WEAPONS[newWep].name} (١٢ث)!`,
+              text: `${WEAPONS[newWep].emoji} ${WEAPONS[newWep].name} (12ث)!`,
               color: '#FDE047',
               life: 1.25,
             });
@@ -2901,9 +2901,9 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل جولة:"
             durationOptions={[
-              { value: 35, label: '٣٥ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
-              { value: 60, label: '٦٠ ثانية' },
+              { value: 35, label: '35 ثانية' },
+              { value: 45, label: '45 ثانية' },
+              { value: 60, label: '60 ثانية' },
             ]}
             defaultDuration={45}
             customConfigSlot={
@@ -3039,7 +3039,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                 سلاح الجولة: {weaponMeta.emoji} {weaponMeta.name}
               </div>
               <p className="mt-2 text-xs font-extrabold text-white/85">
-                اثبت الجويستيك لفوق ثانيتين للنط ⬆️ · انزل لتحت ٣ ثواني لدرع الطاقة! 🛡️
+                اثبت الجويستيك لفوق ثانيتين للنط ⬆️ · انزل لتحت 3 ثواني لدرع الطاقة! 🛡️
               </p>
             </div>
           )}

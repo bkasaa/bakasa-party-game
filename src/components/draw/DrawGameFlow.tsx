@@ -91,8 +91,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     phase === 'PASS_DRAWER' ||
     phase === 'REVEAL_WORD' ||
     phase === 'DRAWING' ||
-    phase === 'GUESSING' ||
-    phase === 'TURN_RESULT';
+    phase === 'GUESSING';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -136,10 +135,12 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
   // 15-second guessing countdown timer
   useEffect(() => {
     if (phase !== 'GUESSING') return;
+    if (guessSecondsLeft <= 0) return;
 
     const timer = window.setInterval(() => {
       setGuessSecondsLeft((prev) => {
-        if (prev <= 1) {
+        if (prev <= 0) return 0;
+        if (prev === 1) {
           soundManager.play('error');
           return 0;
         }
@@ -151,7 +152,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [phase]);
+  }, [phase, guessSecondsLeft <= 0]);
 
   const drawCategoryBank = useMemo(() => {
     const custom = getCustomContent();
@@ -290,7 +291,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
   return (
     <div className="min-h-screen flex flex-col">
       <TopBar
-        title={phase === 'LEADERBOARD' ? 'النتيجة' : 'رسمة في ١٠ ثواني'}
+        title={phase === 'LEADERBOARD' ? 'النتيجة' : 'رسمة في 10 ثواني'}
         exitVariant={isRoundInProgress ? 'exit' : 'back'}
         exitLabel={isRoundInProgress ? 'خروج' : 'رجوع'}
         onExit={handleHeaderExit}
@@ -305,14 +306,14 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-black text-[#1E293B] dark:text-white mb-3">
-              رسمة في ١٠ ثواني
+              رسمة في 10 ثواني
             </h2>
-            <p className="text-sm sm:text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-5">
+            <p className="text-sm sm:text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-5 tabular-nums">
               كل لاعب هيرسم مرة ويخمن مرة في دايرة متبادلة! قدامك{' '}
               <span className="text-[#0D9488] dark:text-[#2DD4BF] font-black tabular-nums">{drawDuration} ثانية</span>{' '}
               ترسم الكلمة وقدام صاحبك{' '}
-              <span className="text-[#059669] dark:text-emerald-400 font-black">١٥ ثانية</span> يخمنها. لو صح الاتنين
-              بتاخدوا <span className="text-[#D97706] dark:text-amber-400 font-black">+١٠٠ نقطة</span>!
+              <span className="text-[#059669] dark:text-emerald-400 font-black">15 ثانية</span> يخمنها. لو صح الاتنين
+              بتاخدوا <span className="text-[#D97706] dark:text-amber-400 font-black">+100 نقطة</span>!
             </p>
 
             {/* Pre-Game Drawing Time Selector (10s - 30s) */}
@@ -323,7 +324,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
                   <span>مدة الرسم لكل لاعب:</span>
                 </span>
                 <span className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
-                  من ١٠ إلى ٣٠ ثانية
+                  من 10 إلى 30 ثانية
                 </span>
               </div>
 
@@ -680,7 +681,7 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
                 className="w-full min-h-[58px] rounded-2xl bakasa-btn-green text-white text-lg sm:text-xl font-black flex items-center justify-center gap-2 transition-transform"
               >
                 <Check className="w-6 h-6" />
-                <span>صح! (+١٠٠ نقطة للاتنين)</span>
+                <span>صح! (+100 نقطة للاتنين)</span>
               </button>
 
               <button
@@ -716,9 +717,9 @@ export const DrawGameFlow: React.FC<DrawGameFlowProps> = ({
               <h2 className="text-2xl font-black text-[#1E293B] dark:text-white mb-2">
                 {turnSucceeded ? 'برافو! تخمين صح!' : 'راحت عليكم المرة دي!'}
               </h2>
-              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5">
+              <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5 tabular-nums">
                 {turnSucceeded
-                  ? `${currentTurn.drawer.name} و ${currentTurn.guesser.name} كسبوا +١٠٠ نقطة لكل واحد`
+                  ? `${currentTurn.drawer.name} و ${currentTurn.guesser.name} كسبوا +100 نقطة لكل واحد`
                   : 'مفيش نقط اتضافت في الدور ده'}
               </p>
 

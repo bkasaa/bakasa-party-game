@@ -75,7 +75,7 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
   );
 
   const turnDuration = settings.turnSeconds;
-  const isRoundInProgress = phase === 'ACTIVE' || phase === 'ROUND_RESULT';
+  const isRoundInProgress = phase === 'ACTIVE';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -99,7 +99,9 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
   useEffect(() => {
     if (phase !== 'ACTIVE' || turnTimedOut) return;
 
+    let stopped = false;
     const timer = window.setInterval(() => {
+      if (stopped) return;
       const remaining = Math.max(0, deadlineRef.current - Date.now());
       const sec = Math.ceil(remaining / 1000);
       setMsLeft(remaining);
@@ -116,13 +118,18 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
       }
 
       if (remaining <= 0) {
+        stopped = true;
+        window.clearInterval(timer);
         setTurnTimedOut(true);
         soundManager.play('explosion');
         triggerHaptic([60, 40, 80]);
       }
     }, 80);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [phase, turnTimedOut]);
 
   const startRound = guard(() => {
@@ -251,7 +258,7 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
               <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 هيظهر اسم نادي أو منتخب كبير ({filteredClubs.length} نادي). كل لاعب في دوره قدامه{' '}
                 {turnDuration} ثانية بس يقول اسم لاعب حالي أو سابق لعب للنادي ده من غير تكرار! آخر
-                واحد يفضل صامد يكسب +١٠٠ نقطة.
+                واحد يفضل صامد يكسب +100 نقطة.
               </p>
             </div>
 
@@ -426,7 +433,7 @@ export const ClubChainGameFlow: React.FC<ClubChainGameFlowProps> = ({
                 {winnerPlayer ? `بطل الجولة: ${winnerPlayer.name}!` : 'انتهت الجولة!'}
               </h2>
               <p className="text-sm font-bold text-[#64748B] dark:text-[#94A3B8] mb-5">
-                النادي: {currentClub.name} · +١٠٠ نقطة للصمود الأخير و+١٥ لكل إجابة صح!
+                النادي: {currentClub.name} · +100 نقطة للصمود الأخير و+15 لكل إجابة صح!
               </p>
 
               <div className="flex flex-col gap-2 text-right">

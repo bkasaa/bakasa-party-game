@@ -4,6 +4,7 @@ import { BANNER_COLOR_CLASSES, PLAYER_COLOR_CYCLE } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../hooks/useNavigationGuard';
 import { BannerColor, Player } from '../types/game';
+import { formatNumber } from '../utils/formatNumber';
 import { soundManager } from '../utils/soundManager';
 import { getUsedItemsCount, resetAllUsedItems } from '../utils/usedItemsMemory';
 import { ConfirmModal } from './ConfirmModal';
@@ -72,7 +73,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
     }
     if (players.length >= 20) {
       soundManager.play('error');
-      setErrorMsg('أقصى عدد للاعبين هو ٢٠');
+      setErrorMsg('أقصى عدد للاعبين هو 20');
       return;
     }
     if (players.some((p) => p.name.trim() === trimmed)) {
@@ -97,7 +98,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
     }
     if (players.length < 2) {
       soundManager.play('error');
-      setErrorMsg('لازم لاعبين (٢) على الأقل عشان نبدأ');
+      setErrorMsg('لازم لاعبين (2) على الأقل عشان نبدأ');
       return;
     }
     soundManager.play('next');
@@ -119,7 +120,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
         <div className="flex items-center justify-between gap-3 mb-4 px-1">
           <div className="flex items-center gap-2 text-sm font-extrabold text-[#1E293B] dark:text-[#F8FAFC]">
             <Users className="w-4 h-4 text-[#FF6B4A]" />
-            <span className="tabular-nums">اللاعبين ({players.length} / ٢٠)</span>
+            <span className="tabular-nums">اللاعبين ({formatNumber(players.length)} / 20)</span>
             <span className="text-[#CBD5E1] dark:text-[#475569]">·</span>
             <span className="text-[#64748B] dark:text-[#94A3B8]">اضغط على الشخصية للتخصيص</span>
           </div>
@@ -210,7 +211,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
                 <div className="flex items-center gap-2 shrink-0">
                   <div className="text-center leading-tight px-1">
                     <div className="text-base font-black text-white tabular-nums">
-                      {player.score}
+                      {formatNumber(player.score)}
                     </div>
                     <div className="text-[11px] font-bold text-white/90">نقطة</div>
                   </div>
@@ -254,7 +255,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
             <Eraser className="w-4 h-4 text-[#F59E0B] shrink-0" />
             <span>إعادة تصفير الأسئلة المحفوظة</span>
             {usedCount > 0 && (
-              <span className="text-[#D94E30] dark:text-[#FB7185] tabular-nums">({usedCount})</span>
+              <span className="text-[#D94E30] dark:text-[#FB7185] tabular-nums">({formatNumber(usedCount)})</span>
             )}
           </button>
 
@@ -317,7 +318,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
               <div>
                 <div className="flex items-center justify-between gap-2 mb-2.5">
                   <span className="text-sm font-black text-[#1E293B] dark:text-white">
-                    اختار اللون المميز (١٦ لون)
+                    اختار اللون المميز (16 لون)
                   </span>
                   <span className="text-[11px] font-bold text-[#64748B] dark:text-[#94A3B8]">
                     كل لاعب بلون مختلف
@@ -363,7 +364,7 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
               {/* 24 Avatars */}
               <div>
                 <div className="text-sm font-black text-[#1E293B] dark:text-white mb-2.5">
-                  اختار الشخصية (٢٤ أفاتار)
+                  اختار الشخصية (24 أفاتار)
                 </div>
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5">
                   {AVATAR_OPTIONS.map((av) => {

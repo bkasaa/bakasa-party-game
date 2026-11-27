@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useFullscreen } from '../hooks/useFullscreen';
+import { formatNumber } from '../utils/formatNumber';
 import { soundManager } from '../utils/soundManager';
 import { useTheme } from '../utils/themeManager';
 import { getUsedItemsCount, resetAllUsedItems } from '../utils/usedItemsMemory';
@@ -299,7 +300,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                   <div className="text-xs font-bold text-[#64748B] dark:text-[#94A3B8] tabular-nums">
                     {usedCount > 0
-                      ? `${usedCount} عنصر اتلعبوا قبل كده`
+                      ? `${formatNumber(usedCount)} عنصر اتلعبوا قبل كده`
                       : 'كل الكلمات والأسئلة متاحة حالياً'}
                   </div>
                 </div>

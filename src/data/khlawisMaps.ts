@@ -103,8 +103,8 @@ const APARTMENT_MAP: MazeMapDefinition = {
   id: 'apartment',
   name: 'الشقة الكبيرة',
   emoji: '🏠',
-  subtitle: '٦ غرف وممرات متعرجة، سراير، دواليب، ستائر، ومخزن سري!',
-  badgeText: '٣٠٠٠×٣٠٠٠ · دافئة ومليانة مخابئ',
+  subtitle: '6 غرف وممرات متعرجة، سراير، دواليب، ستائر، ومخزن سري!',
+  badgeText: '3000×3000 · دافئة ومليانة مخابئ',
   cardGradient: 'from-[#4C1D95] via-[#7C3AED] to-[#F59E0B]',
   wallMainColor: '#334155',
   wallTopColor: '#475569',
@@ -324,7 +324,7 @@ const HOSPITAL_MAP: MazeMapDefinition = {
   name: 'المستشفى المهجورة',
   emoji: '🏥',
   subtitle: 'عنابر مرضى، غرفة عمليات، صيدلية، ممرات طويلة، وأشعة مسدودة!',
-  badgeText: '٣٠٠٠×٣٠٠٠ · ستائر طبية وسراير',
+  badgeText: '3000×3000 · ستائر طبية وسراير',
   cardGradient: 'from-[#0F172A] via-[#0369A1] to-[#14B8A6]',
   wallMainColor: '#1E3A5F',
   wallTopColor: '#335C81',
@@ -333,7 +333,7 @@ const HOSPITAL_MAP: MazeMapDefinition = {
   rooms: [
     {
       id: 'hosp_ward1',
-      name: 'عنبر المرضى ١ 🏥',
+      name: 'عنبر المرضى 1 🏥',
       x: 28,
       y: 28,
       w: 1312,
@@ -456,9 +456,9 @@ const HOSPITAL_MAP: MazeMapDefinition = {
   ],
   furniture: [
     // Ward 1
-    { id: 'hosp_bed1', x: 95, y: 110, w: 210, h: 120, style: 'hospital_bed', label: 'سرير ١', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#0284C7', accentColor: '#E0F2FE' },
+    { id: 'hosp_bed1', x: 95, y: 110, w: 210, h: 120, style: 'hospital_bed', label: 'سرير 1', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#0284C7', accentColor: '#E0F2FE' },
     { id: 'hosp_curt1', x: 340, y: 70, w: 54, h: 200, style: 'medical_curtain', label: 'ستارة طبية', hideable: true, blocksSight: true, solidCollision: false, primaryColor: '#14B8A6', accentColor: '#CCFBF1' },
-    { id: 'hosp_bed2', x: 95, y: 420, w: 210, h: 120, style: 'hospital_bed', label: 'سرير ٢', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#0284C7', accentColor: '#E0F2FE' },
+    { id: 'hosp_bed2', x: 95, y: 420, w: 210, h: 120, style: 'hospital_bed', label: 'سرير 2', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#0284C7', accentColor: '#E0F2FE' },
     { id: 'hosp_cab1', x: 740, y: 60, w: 200, h: 86, style: 'medicine_cabinet', label: 'دولاب أدوية', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#E2E8F0', accentColor: '#EF4444' },
     { id: 'hosp_wheel1', x: 1080, y: 1080, w: 86, h: 86, style: 'wheelchair', label: 'كرسي متحرك', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#475569', accentColor: '#38BDF8' },
     { id: 'hosp_curt2', x: 42, y: 920, w: 56, h: 200, style: 'medical_curtain', label: 'ستارة العنبر', hideable: true, blocksSight: true, solidCollision: false, primaryColor: '#0EA5E9', accentColor: '#BAE6FD' },
@@ -473,8 +473,8 @@ const HOSPITAL_MAP: MazeMapDefinition = {
     { id: 'hosp_xray', x: 100, y: 2680, w: 230, h: 130, style: 'operating_table', label: 'جهاز الأشعة', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#334155', accentColor: '#38BDF8' },
     { id: 'hosp_desk1', x: 1040, y: 2740, w: 200, h: 96, style: 'desk', label: 'مكتب التحاليل', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#475569', accentColor: '#CBD5E1' },
     // Isolation Ward
-    { id: 'hosp_bed4', x: 1740, y: 1720, w: 210, h: 120, style: 'hospital_bed', label: 'سرير العزل ١', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#DC2626', accentColor: '#FECACA' },
-    { id: 'hosp_bed5', x: 2680, y: 2340, w: 210, h: 120, style: 'hospital_bed', label: 'سرير العزل ٢', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#DC2626', accentColor: '#FECACA' },
+    { id: 'hosp_bed4', x: 1740, y: 1720, w: 210, h: 120, style: 'hospital_bed', label: 'سرير العزل 1', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#DC2626', accentColor: '#FECACA' },
+    { id: 'hosp_bed5', x: 2680, y: 2340, w: 210, h: 120, style: 'hospital_bed', label: 'سرير العزل 2', hideable: true, blocksSight: false, solidCollision: true, primaryColor: '#DC2626', accentColor: '#FECACA' },
     { id: 'hosp_curt_iso', x: 2890, y: 1780, w: 58, h: 210, style: 'medical_curtain', label: 'ستارة العزل', hideable: true, blocksSight: true, solidCollision: false, primaryColor: '#F43F5E', accentColor: '#FFE4E6' },
     { id: 'hosp_cab_iso', x: 1760, y: 2760, w: 220, h: 92, style: 'medicine_cabinet', label: 'خزانة الطوارئ', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#94A3B8', accentColor: '#FACC15' },
     { id: 'hosp_wheel2', x: 2240, y: 2760, w: 86, h: 86, style: 'wheelchair', label: 'ترولي إسعاف', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#334155', accentColor: '#38BDF8' },
@@ -482,7 +482,7 @@ const HOSPITAL_MAP: MazeMapDefinition = {
     { id: 'hosp_recept', x: 1410, y: 1060, w: 160, h: 88, style: 'desk', label: 'الاستقبال', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F766E', accentColor: '#99F6E4' },
     { id: 'hosp_plant1', x: 1448, y: 180, w: 80, h: 80, style: 'plant', label: 'زرعة الممر', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#15803D', accentColor: '#86EFAC' },
     { id: 'hosp_plant2', x: 1448, y: 2740, w: 78, h: 78, style: 'plant', label: 'زرعة المدخل', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#16A34A', accentColor: '#BBF7D0' },
-    { id: 'hosp_mon1', x: 318, y: 120, w: 68, h: 52, style: 'hospital_monitor', label: 'شاشة نبض ١', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#22C55E' },
+    { id: 'hosp_mon1', x: 318, y: 120, w: 68, h: 52, style: 'hospital_monitor', label: 'شاشة نبض 1', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#22C55E' },
     { id: 'hosp_mon2', x: 2100, y: 272, w: 72, h: 54, style: 'hospital_monitor', label: 'مونيتور العمليات', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#38BDF8' },
     { id: 'hosp_mon3', x: 1968, y: 1732, w: 68, h: 52, style: 'hospital_monitor', label: 'شاشة العزل', hideable: false, blocksSight: false, solidCollision: true, primaryColor: '#0F172A', accentColor: '#EF4444' },
   ],
@@ -527,7 +527,7 @@ const FACTORY_MAP: MazeMapDefinition = {
   name: 'المصنع القديم',
   emoji: '🏭',
   subtitle: 'خطوط إنتاج، حاويات شحن، صناديق خشب، ماكينات، وزوايا عمياء!',
-  badgeText: '٣٠٠٠×٣٠٠٠ · حاويات وصناديق',
+  badgeText: '3000×3000 · حاويات وصناديق',
   cardGradient: 'from-[#7C2D12] via-[#EA580C] to-[#F59E0B]',
   wallMainColor: '#3F3F46',
   wallTopColor: '#52525B',
@@ -651,7 +651,7 @@ const FACTORY_MAP: MazeMapDefinition = {
   ],
   furniture: [
     // Assembly Line
-    { id: 'fac_conv1', x: 90, y: 170, w: 340, h: 96, style: 'conveyor', label: 'خط سير ١', hideable: false, blocksSight: true, solidCollision: true, primaryColor: '#3F3F46', accentColor: '#FACC15' },
+    { id: 'fac_conv1', x: 90, y: 170, w: 340, h: 96, style: 'conveyor', label: 'خط سير 1', hideable: false, blocksSight: true, solidCollision: true, primaryColor: '#3F3F46', accentColor: '#FACC15' },
     { id: 'fac_mach1', x: 760, y: 120, w: 220, h: 140, style: 'machinery', label: 'ماكينة الكبس', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#EA580C', accentColor: '#FED7AA' },
     { id: 'fac_crate1', x: 120, y: 500, w: 160, h: 120, style: 'crate', label: 'صندوق قطع غيار', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#B45309', accentColor: '#FDE68A' },
     { id: 'fac_lock1', x: 1040, y: 1040, w: 210, h: 92, style: 'locker', label: 'لوكر العمال', hideable: true, blocksSight: true, solidCollision: true, primaryColor: '#2563EB', accentColor: '#DBEAFE' },

@@ -154,8 +154,8 @@ const MODE_CONFIG: Record<
   },
   zombie: {
     title: 'مود الزومبي 🧟‍♂️',
-    subtitle: 'اللي يتمسك بيتحول لزومبي بشري والشاشة بتتقسم تلقائياً (حتى ٤ لاعبين) يطاردوا مع الباحث!',
-    badge: 'شاشة مقسمة حتى ٤ لاعبين',
+    subtitle: 'اللي يتمسك بيتحول لزومبي بشري والشاشة بتتقسم تلقائياً (حتى 4 لاعبين) يطاردوا مع الباحث!',
+    badge: 'شاشة مقسمة حتى 4 لاعبين',
     emoji: '🧟‍♂️',
   },
 };
@@ -1156,31 +1156,42 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   useEffect(() => {
     if (phase !== 'HIDE_ACTIVE' && phase !== 'SEEK_ACTIVE') return;
 
+    let stopped = false;
     const timer = window.setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          if (phase === 'HIDE_ACTIVE') {
-            clearJoystick();
-            soundManager.play('next');
-            if (hideStep + 1 < hiderQueue.length) {
-              setHideStep((s) => s + 1);
-              setPhase('HIDE_HANDOFF');
-            } else {
-              setPhase('SEEK_HANDOFF');
-            }
+      if (stopped) return;
+      const cur = secondsLeftRef.current;
+      if (cur <= 1) {
+        stopped = true;
+        window.clearInterval(timer);
+        secondsLeftRef.current = 0;
+        setSecondsLeft(0);
+        if (phase === 'HIDE_ACTIVE') {
+          clearJoystick();
+          soundManager.play('next');
+          if (hideStep + 1 < hiderQueue.length) {
+            setHideStep((s) => s + 1);
+            setPhase('HIDE_HANDOFF');
           } else {
-            finalizeRound(false);
+            setPhase('SEEK_HANDOFF');
           }
-          return 0;
+        } else {
+          finalizeRound(false);
         }
-        if (prev <= 6) {
-          soundManager.play('tickUrgent');
-        }
-        return prev - 1;
-      });
+        return;
+      }
+
+      const next = cur - 1;
+      secondsLeftRef.current = next;
+      setSecondsLeft(next);
+      if (next <= 5) {
+        soundManager.play('tickUrgent');
+      }
     }, 1000);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [phase, hideStep, hiderQueue.length, clearJoystick, finalizeRound]);
 
   // Size DPR canvas
@@ -2308,7 +2319,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
             <div className="rounded-3xl qada-card p-4 flex flex-col gap-2.5">
               <div className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5 mb-0.5">
                 <MapIcon className="w-4 h-4 text-[#0EA5E9]" />
-                <span>اختر خريطة المتاهة (٣٠٠٠×٣٠٠٠):</span>
+                <span>اختر خريطة المتاهة (3000×3000):</span>
               </div>
               {KHLAWIS_MAP_ORDER.map((mId) => {
                 const m = KHLAWIS_MAPS[mId];

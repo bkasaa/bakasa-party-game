@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface SplashIntroProps {
   onComplete: () => void;
@@ -17,21 +17,39 @@ const SPARKS = [
 
 export const SplashIntro: React.FC<SplashIntroProps> = ({ onComplete }) => {
   const [fading, setFading] = useState(false);
+  const completedRef = useRef(false);
+  const clickTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const finish = () => {
+      if (completedRef.current) return;
+      completedRef.current = true;
+      onComplete();
+    };
     const fadeTimer = window.setTimeout(() => setFading(true), 1200);
-    const doneTimer = window.setTimeout(() => onComplete(), 1550);
+    const doneTimer = window.setTimeout(finish, 1550);
     return () => {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(doneTimer);
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
     };
   }, [onComplete]);
 
   return (
     <div
       onClick={() => {
+        if (completedRef.current || clickTimerRef.current !== null) return;
         setFading(true);
-        window.setTimeout(onComplete, 180);
+        clickTimerRef.current = window.setTimeout(() => {
+          clickTimerRef.current = null;
+          if (!completedRef.current) {
+            completedRef.current = true;
+            onComplete();
+          }
+        }, 180);
       }}
       className={`fixed inset-0 z-[100] flex flex-col items-center justify-center px-6 bakasa-bg transition-all duration-350 ${
         fading ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100 scale-100'

@@ -292,7 +292,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
 
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -1085,7 +1085,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="اصطياد الدجاج"
-            subtitle="امسك الدجاج الهربان في الساحة (حد أقصى ٢ فوق راسك) ورجّعهم لحوشك قبل صحابك!"
+            subtitle="امسك الدجاج الهربان في الساحة (حد أقصى 2 فوق راسك) ورجّعهم لحوشك قبل صحابك!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#65a30d] to-[#ca8a04]"
             icon={<Bird className="w-12 h-12 text-white" />}
@@ -1093,9 +1093,9 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل جولة:"
             durationOptions={[
-              { value: 30, label: '٣٠ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
-              { value: 60, label: '٦٠ ثانية' },
+              { value: 30, label: '30 ثانية' },
+              { value: 45, label: '45 ثانية' },
+              { value: 60, label: '60 ثانية' },
             ]}
             defaultDuration={45}
             onStartSeries={(rounds, secs) => {
@@ -1141,7 +1141,7 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
                 {countdownNum}
               </div>
               <div className="mt-3 text-sm sm:text-base font-black text-white/95">
-                احمل حتى دجاجتين، ادخل حوشك أو اسرق من عش خصمك (درع ١.٥ ثانية بعد كل سرقة)!
+                احمل حتى دجاجتين، ادخل حوشك أو اسرق من عش خصمك (درع 1.5 ثانية بعد كل سرقة)!
               </div>
             </div>
           )}

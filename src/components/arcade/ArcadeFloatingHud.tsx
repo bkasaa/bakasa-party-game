@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Music, Volume2, VolumeX, X } from 'lucide-react';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager } from '../../utils/soundManager';
 
 interface ArcadeFloatingHudProps {
@@ -56,7 +57,7 @@ export const ArcadeFloatingHud: React.FC<ArcadeFloatingHudProps> = ({
                 secondsLeft <= 5 ? 'text-rose-400' : 'text-emerald-300'
               }`}
             >
-              {secondsLeft}ث
+              {formatNumber(secondsLeft)}ث
             </span>
           </>
         )}

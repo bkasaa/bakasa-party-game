@@ -7,6 +7,7 @@ import {
   ArcadeDelta,
   ArcadePlayer,
 } from '../../types/arcade';
+import { formatNumber, formatSignedNumber } from '../../utils/formatNumber';
 import { getScoreboardRankMap } from '../../utils/scoreboardMood';
 import { computeArcadeTitles } from '../../utils/sessionStats';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
@@ -159,7 +160,7 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
                       style={{ color: theme.textOnColor }}
                       className="text-xs font-extrabold opacity-90 tabular-nums"
                     >
-                      +{delta} نقطة في الدور ده
+                      {formatSignedNumber(delta)} نقطة في الدور ده
                     </div>
                   )}
                 </div>
@@ -170,7 +171,7 @@ export const ArcadeLeaderboardScreen: React.FC<ArcadeLeaderboardScreenProps> = (
                   style={{ color: theme.textOnColor }}
                   className="text-xl font-black tabular-nums"
                 >
-                  {player.score}
+                  {formatNumber(player.score)}
                 </div>
                 <div
                   style={{ color: theme.textOnColor }}

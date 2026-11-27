@@ -166,7 +166,7 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
 
   const placements = getCornerPlacements(players.length);
   const goHome = useGoHome();
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
 
   useNavigationGuard(isRoundActive, () => setShowExitConfirm(true));
   useArcadeTouchLock(isRoundActive, arenaRef);
@@ -897,9 +897,9 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
             defaultRounds={3}
             durationLabel="مدة كل جولة:"
             durationOptions={[
-              { value: 20, label: '٢٠ ثانية' },
-              { value: 30, label: '٣٠ ثانية' },
-              { value: 45, label: '٤٥ ثانية' },
+              { value: 20, label: '20 ثانية' },
+              { value: 30, label: '30 ثانية' },
+              { value: 45, label: '45 ثانية' },
             ]}
             defaultDuration={30}
             onStartSeries={(rounds, secs) => {

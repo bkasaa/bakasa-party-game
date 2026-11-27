@@ -123,8 +123,7 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
     [players, teamMap]
   );
 
-  const isRoundInProgress =
-    phase === 'PASS_PAIR' || phase === 'ACTIVE_TURN' || phase === 'TURN_RESULT';
+  const isRoundInProgress = phase === 'PASS_PAIR' || phase === 'ACTIVE_TURN';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -170,7 +169,9 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
   useEffect(() => {
     if (phase !== 'ACTIVE_TURN') return;
 
+    let stopped = false;
     const timer = window.setInterval(() => {
+      if (stopped) return;
       const remaining = Math.max(0, deadlineRef.current - Date.now());
       const sec = Math.ceil(remaining / 1000);
       setMsLeft(remaining);
@@ -187,13 +188,18 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
       }
 
       if (remaining <= 0) {
+        stopped = true;
+        window.clearInterval(timer);
         soundManager.play('victory');
         triggerHaptic([45, 35, 65]);
         setPhase('TURN_RESULT');
       }
     }, 80);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
   }, [phase]);
 
   const handleTogglePlayerTeam = (playerId: string) => {
@@ -357,7 +363,7 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
               </h2>
               <p className="text-xs sm:text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
                 {scopedCards.length} كارت (لاعبين، مدربين، أندية، وملاعب)! اوصف لفريقك من غير ما
-                تقول الكلمات الممنوعة. كل إجابة صح تدي +٢٥ نقطة والفريق الفائز ياخد +٤٠ بونص!
+                تقول الكلمات الممنوعة. كل إجابة صح تدي +25 نقطة والفريق الفائز ياخد +40 بونص!
               </p>
             </div>
 
@@ -600,7 +606,7 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
                 className="w-full min-h-[60px] rounded-2xl bakasa-btn-green text-white text-xl font-black flex items-center justify-center gap-2 transition-transform"
               >
                 <Check className="w-6 h-6" />
-                <span>صح! (+١)</span>
+                <span>صح! (+1)</span>
               </button>
 
               <button

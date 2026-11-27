@@ -69,8 +69,7 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
   const usedWordsRef = useRef<Set<string>>(new Set());
   const flashTimerRef = useRef<number | null>(null);
 
-  const isRoundInProgress =
-    phase === 'PASS_PLAYER' || phase === 'ACTIVE_FOREHEAD' || phase === 'TURN_SUMMARY';
+  const isRoundInProgress = phase === 'PASS_PLAYER' || phase === 'ACTIVE_FOREHEAD';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);

@@ -97,9 +97,11 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
   const explodeTimeoutRef = useRef<number | null>(null);
   const blastDelayTimeoutRef = useRef<number | null>(null);
   const urgencyRafRef = useRef<number | null>(null);
+  const shakeTimeoutRef = useRef<number | null>(null);
+  const passFlashTimeoutRef = useRef<number | null>(null);
   const lastProgressStepRef = useRef<number>(-1);
 
-  const isRoundInProgress = phase === 'ACTIVE' || phase === 'EXPLODED';
+  const isRoundInProgress = phase === 'ACTIVE';
 
   useNavigationGuard(isRoundInProgress, () => {
     setShowExitConfirm(true);
@@ -117,6 +119,14 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
     if (blastDelayTimeoutRef.current !== null) {
       window.clearTimeout(blastDelayTimeoutRef.current);
       blastDelayTimeoutRef.current = null;
+    }
+    if (shakeTimeoutRef.current !== null) {
+      window.clearTimeout(shakeTimeoutRef.current);
+      shakeTimeoutRef.current = null;
+    }
+    if (passFlashTimeoutRef.current !== null) {
+      window.clearTimeout(passFlashTimeoutRef.current);
+      passFlashTimeoutRef.current = null;
     }
     if (urgencyRafRef.current !== null) {
       window.cancelAnimationFrame(urgencyRafRef.current);
@@ -203,8 +213,12 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       setBombProgress(1);
       setShaking(true);
       setExplodingFlash(true);
-      window.setTimeout(() => setShaking(false), 600);
+      shakeTimeoutRef.current = window.setTimeout(() => {
+        shakeTimeoutRef.current = null;
+        setShaking(false);
+      }, 600);
       blastDelayTimeoutRef.current = window.setTimeout(() => {
+        blastDelayTimeoutRef.current = null;
         setExplodingFlash(false);
         setPhase('EXPLODED');
       }, 3000);
@@ -253,7 +267,13 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
       setCurrentHolderIdx((prev) => (prev + 1) % players.length);
     }
     setPassFlash(true);
-    window.setTimeout(() => setPassFlash(false), 180);
+    if (passFlashTimeoutRef.current !== null) {
+      window.clearTimeout(passFlashTimeoutRef.current);
+    }
+    passFlashTimeoutRef.current = window.setTimeout(() => {
+      passFlashTimeoutRef.current = null;
+      setPassFlash(false);
+    }, 180);
   });
 
   const handleAdvanceClassicHolder = () => {
@@ -261,7 +281,13 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
     soundManager.play('click');
     setCurrentHolderIdx((prev) => (prev + 1) % players.length);
     setPassFlash(true);
-    window.setTimeout(() => setPassFlash(false), 150);
+    if (passFlashTimeoutRef.current !== null) {
+      window.clearTimeout(passFlashTimeoutRef.current);
+    }
+    passFlashTimeoutRef.current = window.setTimeout(() => {
+      passFlashTimeoutRef.current = null;
+      setPassFlash(false);
+    }, 150);
   };
 
   const handleSelectLoser = guard((loser: Player) => {
@@ -384,7 +410,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
               <p className="text-base font-bold text-[#64748B] dark:text-[#94A3B8] max-w-sm leading-relaxed mb-5">
                 هيظهر لك سؤال سريع — جاوب بصوت عالي واضغط{' '}
                 <span className="text-[#059669] dark:text-emerald-400 font-black">&quot;جاوبت - اللي بعده!&quot;</span>{' '}
-                عشان يتغير السؤال ويمرر الموبايل بسرعة! الوقت مخفي بين ٣٠ ثانية و٣ دقايق.
+                عشان يتغير السؤال ويمرر الموبايل بسرعة! الوقت مخفي بين 30 ثانية و3 دقايق.
               </p>
             )}
 
@@ -644,8 +670,8 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                 <Skull className="w-9 h-9" />
               </div>
               <h2 className="text-3xl font-black text-[#BE123C] dark:text-rose-200 mb-1">بوووم! انفجرت!</h2>
-              <p className="text-sm sm:text-base font-bold text-[#475569] dark:text-rose-100">
-                التليفون كان في إيد مين لما انفجرت؟ (يتخصم منه ١٠٠ نقطة)
+              <p className="text-sm sm:text-base font-bold text-[#475569] dark:text-rose-100 tabular-nums">
+                التليفون كان في إيد مين لما انفجرت؟ (يتخصم منه 100 نقطة)
               </p>
             </div>
 
@@ -666,7 +692,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
                       </span>
                     </div>
                     <span className="shrink-0 rounded-xl bg-white/95 px-3 py-1 text-xs font-black text-[#BE123C] tabular-nums shadow-sm">
-                      -١٠٠ نقطة
+                      -100 نقطة
                     </span>
                   </button>
                 );
@@ -680,7 +706,7 @@ export const BombGameFlow: React.FC<BombGameFlowProps> = ({
           <LeaderboardScreen
             players={players}
             deltas={roundDeltas}
-            summaryHeadline={`القنبلة انفجرت في ${loserName} (-١٠٠ نقطة)`}
+            summaryHeadline={`القنبلة انفجرت في ${loserName} (-100 نقطة)`}
             isTournamentMode={Boolean(onTournamentFinish)}
             onNewRound={handleNewRound}
             onFinishGame={() => {

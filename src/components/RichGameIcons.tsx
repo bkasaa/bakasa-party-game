@@ -470,7 +470,7 @@ export const RichFootballGameIcon: React.FC<{ id: FootballGameId; className?: st
           <circle cx="24" cy="14" r="7" fill="#FDE047" stroke="#0F172A" strokeWidth="2" />
           <circle cx="13" cy="31" r="7" fill="#FFFFFF" stroke="#0F172A" strokeWidth="2" />
           <circle cx="35" cy="31" r="7" fill="#34D399" stroke="#0F172A" strokeWidth="2" />
-          <text x="24" y="18" textAnchor="middle" fill="#0F172A" fontSize="10" fontWeight="900">٣</text>
+          <text x="24" y="18" textAnchor="middle" fill="#0F172A" fontSize="10" fontWeight="900">3</text>
         </svg>
       );
     case 'football_charades':

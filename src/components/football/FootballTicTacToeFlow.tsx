@@ -74,7 +74,7 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
 
-  const isRoundInProgress = phase !== 'READY' && phase !== 'LEADERBOARD';
+  const isRoundInProgress = phase === 'PLAYING';
   useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
 
   const playerX = players[playerXIdx] ?? players[0];
@@ -212,7 +212,7 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
               <div className="flex items-center gap-2 mb-1.5">
                 <Grid3X3 className="w-5 h-5 text-[#16A34A]" />
                 <h2 className="text-base sm:text-lg font-black text-[#1E293B] dark:text-[#F8FAFC]">
-                  شبكة إكس أو الكروية (٣×٣)
+                  شبكة إكس أو الكروية (3×3)
                 </h2>
               </div>
               <p className="text-xs sm:text-sm font-bold text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
@@ -313,8 +313,8 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
                 </div>
                 <h2 className="text-xl font-black text-[#1E293B] dark:text-[#F8FAFC]">
                   {winnerMark === 'DRAW'
-                    ? 'تعادل حماس! +٣٠ نقطة لكل واحد'
-                    : `${winnerMark === 'X' ? playerX.name : playerO.name} (${winnerMark}) كسب +١٠٠ نقطة!`}
+                    ? 'تعادل حماس! +30 نقطة لكل واحد'
+                    : `${winnerMark === 'X' ? playerX.name : playerO.name} (${winnerMark}) كسب +100 نقطة!`}
                 </h2>
               </div>
             )}

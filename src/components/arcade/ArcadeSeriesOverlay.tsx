@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Trophy } from 'lucide-react';
 import { ARCADE_COLORS, ArcadeDelta, ArcadePlayer } from '../../types/arcade';
+import { formatNumber, formatSignedNumber } from '../../utils/formatNumber';
 
 interface ArcadeSeriesOverlayProps {
   players: ArcadePlayer[];
@@ -45,7 +46,7 @@ export const ArcadeSeriesOverlay: React.FC<ArcadeSeriesOverlayProps> = ({
     >
       <div className="w-full max-w-sm rounded-3xl qada-card p-5 shadow-2xl text-center">
         <div className="text-xs font-extrabold text-[#0D9488] dark:text-[#2DD4BF] tabular-nums mb-1">
-          انتهت الجولة {roundNum} من {totalRounds}
+          انتهت الجولة {formatNumber(roundNum)} من {formatNumber(totalRounds)}
         </div>
 
         <div className="flex items-center justify-center gap-2 mb-4">
@@ -90,11 +91,11 @@ export const ArcadeSeriesOverlay: React.FC<ArcadeSeriesOverlayProps> = ({
                 <div className="flex items-center gap-2 shrink-0 tabular-nums">
                   {gained > 0 && (
                     <span className="text-xs font-black text-[#059669] dark:text-[#34D399]">
-                      +{gained}
+                      {formatSignedNumber(gained)}
                     </span>
                   )}
                   <span className="text-base font-black text-[#D94E30] dark:text-[#FF8C73]">
-                    {pts} ن
+                    {formatNumber(pts)} ن
                   </span>
                 </div>
               </div>

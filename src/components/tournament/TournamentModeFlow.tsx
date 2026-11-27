@@ -16,6 +16,7 @@ import { BANNER_COLOR_CLASSES } from '../../data/gameData';
 import { useTapGuard } from '../../hooks/useAntiDoubleTap';
 import { useNavigationGuard } from '../../hooks/useNavigationGuard';
 import { Player, RoundDelta } from '../../types/game';
+import { formatNumber } from '../../utils/formatNumber';
 import { getScoreboardRankMap } from '../../utils/scoreboardMood';
 import { soundManager, triggerHaptic } from '../../utils/soundManager';
 import { shareStoryCardImage } from '../../utils/storyCardShare';
@@ -75,12 +76,12 @@ const TOURNAMENT_CATALOG: TournamentGameMeta[] = [
   { id: 'headsup', title: 'بدون كلام 🎭', section: 'ألعاب القعدة' },
   { id: 'bomb_questions', title: 'أسئلة القنبلة', section: 'ألعاب القعدة' },
   { id: 'bomb_classic', title: 'القنبلة', section: 'ألعاب القعدة' },
-  { id: 'draw', title: 'رسمة في ١٠ ثواني', section: 'ألعاب القعدة' },
-  { id: 'forger', title: 'المزور (٣+)', section: 'ألعاب القعدة', minPlayers: 3 },
+  { id: 'draw', title: 'رسمة في 10 ثواني', section: 'ألعاب القعدة' },
+  { id: 'forger', title: 'المزور (3+)', section: 'ألعاب القعدة', minPlayers: 3 },
   { id: 'football_spy', title: 'جاسوس الكورة', section: 'قعدة اللاعيبة ⚽' },
   { id: 'football_password', title: 'كلمة السر', section: 'قعدة اللاعيبة ⚽' },
   { id: 'football_chain', title: 'قول اسم لاعب', section: 'قعدة اللاعيبة ⚽' },
-  { id: 'football_three', title: 'تحدي الـ ٣ في الكورة', section: 'قعدة اللاعيبة ⚽' },
+  { id: 'football_three', title: 'تحدي الـ 3 في الكورة', section: 'قعدة اللاعيبة ⚽' },
   { id: 'football_charades', title: 'خمن في الكورة', section: 'قعدة اللاعيبة ⚽' },
   { id: 'football_penalty', title: 'ضربات الجزاء', section: 'قعدة اللاعيبة ⚽' },
   { id: 'football_auction', title: 'تحدي المزاد', section: 'قعدة اللاعيبة ⚽' },
@@ -434,7 +435,7 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
               <div className="flex items-center justify-between gap-2 mb-2">
                 <span className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5">
                   <Users className="w-4 h-4 text-[#14B8A6]" />
-                  <span>المشاركين ({players.length} لاعبين)</span>
+                  <span className="tabular-nums">المشاركين ({formatNumber(players.length)} لاعبين)</span>
                 </span>
                 <button
                   type="button"
@@ -515,7 +516,7 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                             : 'bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] text-[#475569] dark:text-[#CBD5E1]'
                         }`}
                       >
-                        <span className="text-base tabular-nums">{cnt} ألعاب</span>
+                        <span className="text-base tabular-nums">{formatNumber(cnt)} ألعاب</span>
                         <span className="text-[10px] opacity-85">
                           {cnt === 3 ? 'سريعة' : cnt === 5 ? 'متوازنة' : 'ماراثون'}
                         </span>
@@ -525,8 +526,8 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                 </div>
               ) : (
                 <div className="pt-2 border-t border-[#E7DEC8]/60 dark:border-[#334155]/70 flex flex-col gap-2 max-h-[260px] overflow-y-auto pr-1">
-                  <div className="text-xs font-black text-[#1E293B] dark:text-[#F8FAFC]">
-                    اختار الألعاب ({customSelectedIds.length} مختارة):
+                  <div className="text-xs font-black text-[#1E293B] dark:text-[#F8FAFC] tabular-nums">
+                    اختار الألعاب ({formatNumber(customSelectedIds.length)} مختارة):
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {eligibleCatalog.map((game) => {
@@ -571,8 +572,8 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
             <div className="rounded-3xl qada-card p-6 text-center border-2 border-[#F59E0B]/55">
               <div className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-3 py-1 text-xs font-black text-amber-800 dark:text-amber-300 mb-3">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>
-                  اللعبة {currentIdx + 1} من {lineup.length}
+                <span className="tabular-nums">
+                  اللعبة {formatNumber(currentIdx + 1)} من {formatNumber(lineup.length)}
                 </span>
               </div>
 
@@ -599,15 +600,15 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                     className="flex items-center justify-between rounded-2xl bg-[#FFF9F0] dark:bg-[#0F172A] border border-[#E7DEC8] dark:border-[#334155] px-3 py-2"
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-black w-5 text-center">
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx + 1}.`}
+                      <span className="text-sm font-black w-5 text-center tabular-nums">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${formatNumber(idx + 1)}.`}
                       </span>
                       <span className="text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] truncate">
                         {p.name}
                       </span>
                     </div>
                     <span className="text-sm font-black text-[#D94E30] dark:text-[#FF8C73] tabular-nums">
-                      {p.score} نقطة
+                      {formatNumber(p.score)} نقطة
                     </span>
                   </div>
                 ))}
@@ -651,8 +652,8 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                 <div className="w-12 h-12 mx-auto mb-2 rounded-2xl bg-amber-100 dark:bg-amber-950/70 border-2 border-amber-400 flex items-center justify-center text-amber-500 animate-bounce">
                   <Crown className="w-7 h-7" />
                 </div>
-                <div className="text-xs font-black text-[#D97706] dark:text-[#FBBF24] mb-1">
-                  👑 بطل السهرة الكاملة ({lineup.length} ألعاب)
+                <div className="text-xs font-black text-[#D97706] dark:text-[#FBBF24] mb-1 tabular-nums">
+                  👑 بطل السهرة الكاملة ({formatNumber(lineup.length)} ألعاب)
                 </div>
                 <div className="flex justify-center my-3">
                   <PlayerAvatar
@@ -668,7 +669,7 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                   {champion.name}
                 </h2>
                 <div className="mt-1 text-lg font-black text-[#16A34A] dark:text-[#34D399] tabular-nums">
-                  {champion.score} نقطة إجمالية 🏆
+                  {formatNumber(champion.score)} نقطة إجمالية 🏆
                 </div>
               </div>
             )}
@@ -700,7 +701,7 @@ export const TournamentModeFlow: React.FC<TournamentModeFlowProps> = ({
                     </div>
                     <div className="text-center leading-tight shrink-0">
                       <div className="text-xl font-black text-white tabular-nums">
-                        {player.score}
+                        {formatNumber(player.score)}
                       </div>
                       <div className="text-[11px] font-bold text-white/90">نقطة</div>
                     </div>

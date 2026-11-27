@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock, Globe2, Layers } from 'lucide-react';
 import { FootballGlobalSettings, FootballPoolScope } from '../../data/footballData';
+import { formatNumber } from '../../utils/formatNumber';
 import { soundManager } from '../../utils/soundManager';
 
 interface FootballSettingsBarProps {
@@ -96,7 +97,7 @@ export const FootballSettingsBar: React.FC<FootballSettingsBarProps> = ({
                       : 'bg-[#FFF9F0]/80 dark:bg-[#0F172A]/80 border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8]'
                   }`}
                 >
-                  {val} {val === 1 ? '' : roundUnit}
+                  {formatNumber(val)} {val === 1 ? '' : roundUnit}
                 </button>
               );
             })}
@@ -128,7 +129,7 @@ export const FootballSettingsBar: React.FC<FootballSettingsBarProps> = ({
                       : 'bg-[#FFF9F0]/80 dark:bg-[#0F172A]/80 border border-[#E7DEC8] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8]'
                   }`}
                 >
-                  {sec}ث
+                  {formatNumber(sec)}ث
                 </button>
               );
             })}

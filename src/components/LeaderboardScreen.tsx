@@ -3,6 +3,7 @@ import { Camera, Check, Trophy } from 'lucide-react';
 import { BANNER_COLOR_CLASSES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { Player, RoundDelta } from '../types/game';
+import { formatNumber, formatSignedNumber } from '../utils/formatNumber';
 import { computePartyTitles } from '../utils/sessionStats';
 import { getScoreboardRankMap } from '../utils/scoreboardMood';
 import { soundManager, triggerHaptic } from '../utils/soundManager';
@@ -147,7 +148,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
                         delta > 0 ? 'text-white/95' : 'text-rose-100'
                       }`}
                     >
-                      {delta > 0 ? `+${delta} في الدور ده` : `${delta} في الدور ده`}
+                      {formatSignedNumber(delta)} في الدور ده
                     </div>
                   )}
                 </div>
@@ -155,7 +156,7 @@ export const LeaderboardScreen: React.FC<LeaderboardScreenProps> = ({
 
               <div className="shrink-0 text-center leading-tight pl-1">
                 <div className="text-xl font-black text-white tabular-nums">
-                  {player.score}
+                  {formatNumber(player.score)}
                 </div>
                 <div className="text-xs font-bold text-white/90">نقطة</div>
               </div>

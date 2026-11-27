@@ -3,6 +3,7 @@ import { ChevronLeft, Lock, Users } from 'lucide-react';
 import { BANNER_COLOR_CLASSES, HUB_GAMES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
 import { GameId, Player } from '../types/game';
+import { formatNumber } from '../utils/formatNumber';
 import { soundManager, triggerHaptic } from '../utils/soundManager';
 import { BannerThumb } from './BannerThumb';
 import { CardWatermark } from './CardWatermark';
@@ -115,7 +116,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
           <div className="flex items-center justify-between gap-2 mb-2.5 px-1">
             <span className="text-xs sm:text-sm font-black text-[#1E293B] dark:text-[#F8FAFC] flex items-center gap-1.5">
               <Users className="w-4 h-4 text-[#FF6B4A]" />
-              <span>الشلة الحالية ({players.length} لاعبين)</span>
+              <span className="tabular-nums">الشلة الحالية ({formatNumber(players.length)} لاعبين)</span>
             </span>
             <button
               type="button"
@@ -141,7 +142,7 @@ export const MainHubScreen: React.FC<MainHubScreenProps> = ({
                     {player.name}
                   </div>
                   <div className="text-[11px] font-black text-[#D94E30] dark:text-[#FB7185] tabular-nums">
-                    {player.score} نقطة
+                    {formatNumber(player.score)} نقطة
                   </div>
                 </div>
               </div>

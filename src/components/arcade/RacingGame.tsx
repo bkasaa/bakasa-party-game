@@ -360,7 +360,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
   const finishedRef = useRef<boolean>(false);
 
   const placements = getCornerPlacements(players.length);
-  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING' || phase === 'INTER_ROUND';
+  const isRoundActive = phase === 'COUNTDOWN' || phase === 'PLAYING';
   const circuitIdx = Math.min(CIRCUIT_DEFS.length - 1, currentRound - 1);
   const goHome = useGoHome();
   const circuitDef = CIRCUIT_DEFS[circuitIdx];
@@ -1182,7 +1182,7 @@ export const RacingGame: React.FC<RacingGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="سباق العربيات"
-            subtitle="حرك الجويستيك ٣٦٠° في زاويتك لتحرك عربيتك فوراً في أي اتجاه واجمع التيربو والنجوم لتكسب اللفات!"
+            subtitle="حرك الجويستيك 360° في زاويتك لتحرك عربيتك فوراً في أي اتجاه واجمع التيربو والنجوم لتكسب اللفات!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#dc2626] to-[#f59e0b]"
             icon={<Car className="w-12 h-12 text-white" />}
@@ -1190,9 +1190,9 @@ export const RacingGame: React.FC<RacingGameProps> = ({
             defaultRounds={3}
             durationLabel="عدد اللفات في كل سباق:"
             durationOptions={[
-              { value: 2, label: '٢ لفات' },
-              { value: 3, label: '٣ لفات' },
-              { value: 5, label: '٥ لفات' },
+              { value: 2, label: '2 لفات' },
+              { value: 3, label: '3 لفات' },
+              { value: 5, label: '5 لفات' },
             ]}
             defaultDuration={3}
             onStartSeries={(rounds, laps) => {
