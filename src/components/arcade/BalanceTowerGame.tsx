@@ -63,10 +63,13 @@ interface ConvexHitboxSpec {
   slope?: number;
 }
 
+type WeightTier = 'heavy' | 'medium' | 'light';
+
 interface AnimalSpec {
   id: AnimalSpeciesId;
   name: string;
   emoji: string;
+  weightTier: WeightTier;
   parts: ColliderPartRect[];
   hitbox: ConvexHitboxSpec;
   density: number;
@@ -83,8 +86,6 @@ interface PlacedBodyMeta {
   playerName: string;
   droppedAt: number;
   highestY: number;
-  settledDuration: number;
-  hasHeavyDensity: boolean;
 }
 
 interface SplashParticle {
@@ -140,19 +141,33 @@ function getStageMetrics(vw: number, vh: number) {
   return { scale, offsetX, baseGroundScreenY, topSpawnScreenY, initialHoverY };
 }
 
-const ANIMAL_BASE_DENSITY = 0.005;
-const ANIMAL_SETTLED_DENSITY = 0.05;
+const WEIGHT_TIER_DENSITY: Record<WeightTier, number> = {
+  heavy: 0.012,
+  medium: 0.006,
+  light: 0.003,
+};
 
-function makeConvexHitboxBody(hitbox: ConvexHitboxSpec, x: number, y: number): Matter.Body {
+const WEIGHT_TIER_LABEL: Record<WeightTier, string> = {
+  heavy: 'ثقيل ⚖️',
+  medium: 'متوسط',
+  light: 'خفيف 🪶',
+};
+
+function makeConvexHitboxBody(
+  hitbox: ConvexHitboxSpec,
+  density: number,
+  x: number,
+  y: number
+): Matter.Body {
   const opts: Matter.IChamferableBodyDefinition = {
     chamfer: { radius: 6 },
-    friction: 0.9,
-    frictionStatic: 8,
-    restitution: 0.0,
-    frictionAir: 0.04,
+    friction: 0.65,
+    frictionStatic: 1.2,
+    restitution: 0.05,
+    frictionAir: 0.018,
     slop: 0.02,
-    density: ANIMAL_BASE_DENSITY,
-    sleepThreshold: 30,
+    density,
+    sleepThreshold: 45,
   };
   if (hitbox.kind === 'trapezoid') {
     return Matter.Bodies.trapezoid(x, y, hitbox.w, hitbox.h, hitbox.slope ?? 0.18, opts);
@@ -162,7 +177,8 @@ function makeConvexHitboxBody(hitbox: ConvexHitboxSpec, x: number, y: number): M
 
 function computeVisualOffset(
   parts: ColliderPartRect[],
-  hitbox: ConvexHitboxSpec
+  hitbox: ConvexHitboxSpec,
+  density: number
 ): { x: number; y: number } {
   let minX = Infinity;
   let maxX = -Infinity;
@@ -172,7 +188,7 @@ function computeVisualOffset(
     maxX = Math.max(maxX, p.x + p.w / 2);
     maxY = Math.max(maxY, p.y + p.h / 2);
   }
-  const temp = makeConvexHitboxBody(hitbox, 0, 0);
+  const temp = makeConvexHitboxBody(hitbox, density, 0, 0);
   const physicsBottom = temp.bounds.max.y - temp.position.y;
   const visualCenterX = (minX + maxX) / 2;
   return {
@@ -182,143 +198,156 @@ function computeVisualOffset(
 }
 
 const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'visualOffset'>> = [
-  {
-    id: 'lion',
-    name: 'أسد',
-    emoji: '🦁',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'rectangle', w: 66, h: 48 },
-    primaryColor: '#F59E0B',
-    secondaryColor: '#B45309',
-    accentColor: '#FDE68A',
-    parts: [
-      { x: 0, y: -2, w: 66, h: 28 }, // torso
-      { x: 26, y: -14, w: 30, h: 30 }, // mane + head
-      { x: -22, y: 18, w: 14, h: 16 }, // back leg
-      { x: 20, y: 18, w: 14, h: 16 }, // front leg
-    ],
-  },
-  {
-    id: 'giraffe',
-    name: 'زرافة',
-    emoji: '🦒',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'trapezoid', w: 58, h: 74, slope: 0.28 },
-    primaryColor: '#FBBF24',
-    secondaryColor: '#92400E',
-    accentColor: '#FEF3C7',
-    parts: [
-      { x: -6, y: 8, w: 50, h: 24 }, // torso
-      { x: 14, y: -22, w: 15, h: 48 }, // long neck
-      { x: 20, y: -44, w: 24, h: 16 }, // head + snout
-      { x: -22, y: 27, w: 12, h: 18 }, // back leg
-      { x: 10, y: 27, w: 12, h: 18 }, // front leg
-    ],
-  },
+  // HEAVY TIER (Density 0.012) - visibly larger & heavy
   {
     id: 'elephant',
     name: 'فيل',
     emoji: '🐘',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'rectangle', w: 76, h: 50 },
+    weightTier: 'heavy',
+    density: WEIGHT_TIER_DENSITY.heavy,
+    hitbox: { kind: 'rectangle', w: 84, h: 56 },
     primaryColor: '#94A3B8',
     secondaryColor: '#64748B',
-    accentColor: '#CBD5E1',
+    accentColor: '#E2E8F0',
     parts: [
-      { x: -4, y: -4, w: 74, h: 38 }, // heavy torso + head
-      { x: 35, y: 4, w: 14, h: 28 }, // trunk
-      { x: -26, y: 22, w: 18, h: 18 }, // back leg
-      { x: 16, y: 22, w: 18, h: 18 }, // front leg
-    ],
-  },
-  {
-    id: 'bear',
-    name: 'دبدوب',
-    emoji: '🐻',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'rectangle', w: 58, h: 48 },
-    primaryColor: '#92400E',
-    secondaryColor: '#78350F',
-    accentColor: '#FDE68A',
-    parts: [
-      { x: 0, y: 0, w: 58, h: 32 }, // chunky torso
-      { x: 22, y: -15, w: 26, h: 24 }, // head
-      { x: -18, y: 21, w: 16, h: 14 }, // back paw
-      { x: 18, y: 21, w: 16, h: 14 }, // front paw
+      { x: -4, y: -5, w: 82, h: 42 }, // large heavy torso + head
+      { x: 40, y: 4, w: 15, h: 31 }, // trunk
+      { x: -29, y: 24, w: 20, h: 20 }, // back leg
+      { x: 18, y: 24, w: 20, h: 20 }, // front leg
     ],
   },
   {
     id: 'rhino',
     name: 'وحيد القرن',
     emoji: '🦏',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'rectangle', w: 72, h: 46 },
+    weightTier: 'heavy',
+    density: WEIGHT_TIER_DENSITY.heavy,
+    hitbox: { kind: 'rectangle', w: 80, h: 52 },
     primaryColor: '#64748B',
     secondaryColor: '#475569',
-    accentColor: '#E2E8F0',
+    accentColor: '#F1F5F9',
     parts: [
-      { x: -4, y: 0, w: 68, h: 30 }, // armored body
-      { x: 30, y: -4, w: 22, h: 22 }, // head
-      { x: 38, y: -18, w: 10, h: 14 }, // horn
-      { x: -24, y: 20, w: 15, h: 14 }, // back leg
-      { x: 14, y: 20, w: 15, h: 14 }, // front leg
+      { x: -4, y: 0, w: 76, h: 34 }, // large armored body
+      { x: 34, y: -4, w: 24, h: 24 }, // head
+      { x: 43, y: -19, w: 11, h: 15 }, // horn
+      { x: -27, y: 22, w: 17, h: 16 }, // back leg
+      { x: 16, y: 22, w: 17, h: 16 }, // front leg
+    ],
+  },
+  {
+    id: 'bear',
+    name: 'دب',
+    emoji: '🐻',
+    weightTier: 'heavy',
+    density: WEIGHT_TIER_DENSITY.heavy,
+    hitbox: { kind: 'rectangle', w: 68, h: 54 },
+    primaryColor: '#92400E',
+    secondaryColor: '#78350F',
+    accentColor: '#FDE68A',
+    parts: [
+      { x: 0, y: 0, w: 66, h: 36 }, // chunky heavy torso
+      { x: 25, y: -17, w: 29, h: 27 }, // big head
+      { x: -21, y: 23, w: 18, h: 16 }, // back paw
+      { x: 21, y: 23, w: 18, h: 16 }, // front paw
+    ],
+  },
+
+  // MEDIUM TIER (Density 0.006)
+  {
+    id: 'lion',
+    name: 'أسد',
+    emoji: '🦁',
+    weightTier: 'medium',
+    density: WEIGHT_TIER_DENSITY.medium,
+    hitbox: { kind: 'rectangle', w: 66, h: 48 },
+    primaryColor: '#F59E0B',
+    secondaryColor: '#B45309',
+    accentColor: '#FDE68A',
+    parts: [
+      { x: 0, y: -2, w: 64, h: 28 }, // torso
+      { x: 25, y: -14, w: 29, h: 29 }, // mane + head
+      { x: -21, y: 18, w: 14, h: 16 }, // back leg
+      { x: 19, y: 18, w: 14, h: 16 }, // front leg
+    ],
+  },
+  {
+    id: 'giraffe',
+    name: 'زرافة',
+    emoji: '🦒',
+    weightTier: 'medium',
+    density: WEIGHT_TIER_DENSITY.medium,
+    hitbox: { kind: 'trapezoid', w: 56, h: 82, slope: 0.34 },
+    primaryColor: '#FBBF24',
+    secondaryColor: '#92400E',
+    accentColor: '#FEF3C7',
+    parts: [
+      { x: -6, y: 10, w: 48, h: 24 }, // torso
+      { x: 14, y: -22, w: 15, h: 52 }, // tall neck
+      { x: 21, y: -48, w: 24, h: 16 }, // head + snout
+      { x: -21, y: 29, w: 12, h: 20 }, // back leg
+      { x: 10, y: 29, w: 12, h: 20 }, // front leg
     ],
   },
   {
     id: 'fox',
     name: 'ثعلب',
     emoji: '🦊',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'trapezoid', w: 64, h: 40, slope: 0.16 },
+    weightTier: 'medium',
+    density: WEIGHT_TIER_DENSITY.medium,
+    hitbox: { kind: 'trapezoid', w: 60, h: 38, slope: 0.16 },
     primaryColor: '#EA580C',
     secondaryColor: '#9A3412',
     accentColor: '#FFFBEB',
     parts: [
-      { x: 0, y: 2, w: 56, h: 22 }, // sleek torso
-      { x: -30, y: -4, w: 18, h: 16 }, // bushy tail
-      { x: 24, y: -10, w: 22, h: 20 }, // head
-      { x: -16, y: 18, w: 11, h: 14 }, // back leg
-      { x: 16, y: 18, w: 11, h: 14 }, // front leg
+      { x: 0, y: 2, w: 52, h: 20 }, // sleek torso
+      { x: -28, y: -4, w: 18, h: 15 }, // bushy tail
+      { x: 22, y: -10, w: 21, h: 19 }, // head
+      { x: -15, y: 17, w: 10, h: 13 }, // back leg
+      { x: 15, y: 17, w: 10, h: 13 }, // front leg
     ],
   },
+
+  // LIGHT TIER (Density 0.003) - smaller & light
   {
     id: 'cat',
     name: 'قطة',
     emoji: '🐱',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'trapezoid', w: 54, h: 40, slope: 0.16 },
+    weightTier: 'light',
+    density: WEIGHT_TIER_DENSITY.light,
+    hitbox: { kind: 'trapezoid', w: 44, h: 32, slope: 0.16 },
     primaryColor: '#FB923C',
     secondaryColor: '#EA580C',
     accentColor: '#FEF3C7',
     parts: [
-      { x: 0, y: 4, w: 48, h: 22 }, // body
-      { x: 20, y: -10, w: 22, h: 20 }, // head
-      { x: -25, y: -8, w: 10, h: 22 }, // upright tail
-      { x: -14, y: 19, w: 10, h: 12 }, // back leg
-      { x: 14, y: 19, w: 10, h: 12 }, // front leg
+      { x: 0, y: 3, w: 38, h: 17 }, // petite body
+      { x: 16, y: -8, w: 18, h: 16 }, // head
+      { x: -20, y: -6, w: 8, h: 18 }, // upright tail
+      { x: -11, y: 15, w: 8, h: 10 }, // back leg
+      { x: 11, y: 15, w: 8, h: 10 }, // front leg
     ],
   },
   {
     id: 'eagle',
     name: 'نسر',
     emoji: '🦅',
-    density: ANIMAL_BASE_DENSITY,
-    hitbox: { kind: 'rectangle', w: 62, h: 38 },
+    weightTier: 'light',
+    density: WEIGHT_TIER_DENSITY.light,
+    hitbox: { kind: 'rectangle', w: 48, h: 30 },
     primaryColor: '#78350F',
     secondaryColor: '#451A03',
     accentColor: '#FACC15',
     parts: [
-      { x: 0, y: 0, w: 32, h: 32 }, // body
-      { x: -26, y: -6, w: 24, h: 14 }, // left wing
-      { x: 26, y: -6, w: 24, h: 14 }, // right wing
-      { x: 0, y: -18, w: 20, h: 18 }, // white head + beak
+      { x: 0, y: 0, w: 25, h: 25 }, // compact body
+      { x: -20, y: -4, w: 19, h: 11 }, // left wing
+      { x: 20, y: -4, w: 19, h: 11 }, // right wing
+      { x: 0, y: -14, w: 16, h: 14 }, // white head + beak
     ],
   },
 ];
 
 const ANIMAL_SPECS: AnimalSpec[] = RAW_ANIMAL_SPECS.map((spec) => ({
   ...spec,
-  visualOffset: computeVisualOffset(spec.parts, spec.hitbox),
+  visualOffset: computeVisualOffset(spec.parts, spec.hitbox, spec.density),
 }));
 
 function pickRandomAnimal(): AnimalSpec {
@@ -326,7 +355,7 @@ function pickRandomAnimal(): AnimalSpec {
 }
 
 function createAnimalBody(spec: AnimalSpec, x: number, y: number, angleRad: number): Matter.Body {
-  const body = makeConvexHitboxBody(spec.hitbox, x, y);
+  const body = makeConvexHitboxBody(spec.hitbox, spec.density, x, y);
   Matter.Body.setAngle(body, angleRad);
   return body;
 }
@@ -363,7 +392,8 @@ function drawAnimalSilhouette(
   alpha = 1,
   isGhost = false,
   now = 0,
-  blinkSeed = 0
+  blinkSeed = 0,
+  isPanicking = false
 ) {
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -371,42 +401,79 @@ function drawAnimalSilhouette(
   ctx.rotate(angle);
   ctx.translate(-spec.visualOffset.x, -spec.visualOffset.y);
 
-  // Draw body parts with crisp outlines & dual-tone detailing (zero shadowBlur for 60fps mobile)
+  // 2.5D depth extrusion underside layer (zero shadowBlur for 60fps mobile)
+  if (!isGhost) {
+    spec.parts.forEach((p) => {
+      const rx = p.x - p.w / 2;
+      const ry = p.y - p.h / 2 + 3.2;
+      drawRoundedRect(ctx, rx, ry, p.w, p.h, 6);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.24)';
+      ctx.fill();
+    });
+  }
+
+  // Draw body parts with crisp outlines, 2.5D bevels, highlights & underside shading
   spec.parts.forEach((p, idx) => {
     const rx = p.x - p.w / 2;
     const ry = p.y - p.h / 2;
     drawRoundedRect(ctx, rx, ry, p.w, p.h, 6);
     ctx.fillStyle = idx % 2 === 0 ? spec.primaryColor : spec.secondaryColor;
     ctx.fill();
-    ctx.lineWidth = isGhost ? 2 : 2.5;
+    ctx.lineWidth = isGhost ? 2 : 2.4;
     ctx.strokeStyle = isGhost ? playerHex : '#1E293B';
     ctx.stroke();
 
-    // Specular highlight strip on upper half + subtle bottom belly shading
+    // Specular highlight strip on upper half + deep 2.5D belly shading
     if (!isGhost && idx <= 1) {
-      drawRoundedRect(ctx, rx + 3, ry + 2.5, Math.max(4, p.w - 6), Math.max(3, p.h * 0.28), 3);
-      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      drawRoundedRect(ctx, rx + 3, ry + 2.5, Math.max(4, p.w - 6), Math.max(3, p.h * 0.26), 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.32)';
       ctx.fill();
 
       drawRoundedRect(
         ctx,
         rx + 3,
-        ry + p.h - Math.max(4, p.h * 0.22) - 2,
+        ry + p.h - Math.max(4, p.h * 0.24) - 2,
         Math.max(4, p.w - 6),
-        Math.max(3, p.h * 0.2),
+        Math.max(3, p.h * 0.22),
         3
       );
-      ctx.fillStyle = 'rgba(15,23,42,0.12)';
+      ctx.fillStyle = 'rgba(15,23,42,0.16)';
       ctx.fill();
     }
   });
 
   // Deterministic natural blink cycle (~every 3.4 seconds for 130ms)
   const blinkCycle = (now + blinkSeed * 731) % 3400;
-  const isBlinking = !isGhost && blinkCycle < 135;
+  const isBlinking = !isGhost && !isPanicking && blinkCycle < 135;
 
   const drawExpressiveEye = (ex: number, ey: number, radius = 2.6, irisColor = '#0F172A') => {
-    if (isBlinking) {
+    if (isPanicking) {
+      // Wide-eyed worried expression when tilting fast
+      const panicR = radius * 1.45;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(ex, ey, panicR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const jitterX = Math.sin(now * 0.04 + blinkSeed) * 0.8;
+      const jitterY = Math.cos(now * 0.05 + blinkSeed) * 0.6;
+      ctx.fillStyle = irisColor;
+      ctx.beginPath();
+      ctx.arc(ex + jitterX, ey + jitterY, Math.max(1.2, radius * 0.55), 0, Math.PI * 2);
+      ctx.fill();
+
+      // Worried angled brow
+      ctx.strokeStyle = '#0F172A';
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ex - panicR, ey - panicR - 2.2);
+      ctx.lineTo(ex + panicR * 0.7, ey - panicR - 0.5);
+      ctx.stroke();
+    } else if (isBlinking) {
       ctx.strokeStyle = '#0F172A';
       ctx.lineWidth = 2;
       ctx.lineCap = 'round';
@@ -437,136 +504,335 @@ function drawAnimalSilhouette(
     ctx.fill();
   };
 
-  // Characteristic details per animal species
+  const drawPanicSweat = (sx: number, sy: number) => {
+    if (!isPanicking) return;
+    ctx.fillStyle = '#38BDF8';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - 4);
+    ctx.quadraticCurveTo(sx + 3.5, sy + 1, sx, sy + 4);
+    ctx.quadraticCurveTo(sx - 3.5, sy + 1, sx, sy - 4);
+    ctx.fill();
+  };
+
+  // Rich 2.5D characteristic details per animal species
   if (spec.id === 'lion') {
+    // Curved tufted tail
+    ctx.strokeStyle = spec.secondaryColor;
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-31, -4);
+    ctx.quadraticCurveTo(-42, -16, -34, -22);
+    ctx.stroke();
+    ctx.fillStyle = '#78350F';
+    ctx.beginPath();
+    ctx.arc(-34, -22, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Fluffy mane with layered rim
     ctx.fillStyle = '#92400E';
     ctx.beginPath();
-    ctx.arc(26, -14, 17, 0, Math.PI * 2);
+    ctx.arc(25, -14, 17, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#1E293B';
     ctx.lineWidth = 2;
     ctx.stroke();
 
+    // Lion ears
     ctx.fillStyle = spec.primaryColor;
     ctx.beginPath();
-    ctx.arc(27, -14, 11.5, 0, Math.PI * 2);
+    ctx.arc(17, -26, 4.5, 0, Math.PI * 2);
+    ctx.arc(33, -26, 4.5, 0, Math.PI * 2);
     ctx.fill();
 
-    drawRosyCheek(29, -9.5);
-    drawExpressiveEye(31, -16, 2.4);
+    // Face
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.arc(26, -14, 11.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Muzzle & whiskers
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.ellipse(32, -10, 5.5, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawRosyCheek(28, -8);
+    drawExpressiveEye(30, -16, 2.4);
     ctx.fillStyle = '#78350F';
     ctx.beginPath();
-    ctx.arc(36, -12, 2.5, 0, Math.PI * 2);
+    ctx.arc(36, -12, 2.4, 0, Math.PI * 2);
     ctx.fill();
+    drawPanicSweat(16, -24);
   } else if (spec.id === 'giraffe') {
+    // Swishing tail
+    ctx.strokeStyle = spec.secondaryColor;
+    ctx.lineWidth = 2.8;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-29, 4);
+    ctx.quadraticCurveTo(-36, 12, -32, 20);
+    ctx.stroke();
+
+    // Textured spots along body & tall neck
     ctx.fillStyle = spec.secondaryColor;
     [
-      [-14, 4, 4.5],
-      [2, 10, 4],
-      [14, -14, 3.5],
-      [14, -28, 3],
+      [-15, 6, 4.5],
+      [0, 12, 4],
+      [14, -10, 3.6],
+      [14, -24, 3.2],
+      [14, -37, 2.8],
     ].forEach(([sx, sy, sr]) => {
       ctx.beginPath();
       ctx.arc(sx, sy, sr, 0, Math.PI * 2);
       ctx.fill();
     });
+    // Ossicones (horns) + tufts + ears
     ctx.strokeStyle = '#78350F';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(16, -52);
-    ctx.lineTo(14, -60);
-    ctx.moveTo(22, -52);
-    ctx.lineTo(24, -60);
+    ctx.moveTo(16, -55);
+    ctx.lineTo(14, -63);
+    ctx.moveTo(22, -55);
+    ctx.lineTo(24, -63);
     ctx.stroke();
-    drawRosyCheek(25, -40);
-    drawExpressiveEye(24, -46, 2.3);
+    ctx.fillStyle = '#78350F';
+    ctx.beginPath();
+    ctx.arc(14, -64, 2.6, 0, Math.PI * 2);
+    ctx.arc(24, -64, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawRosyCheek(26, -44);
+    drawExpressiveEye(24, -50, 2.3);
+    drawPanicSweat(10, -56);
   } else if (spec.id === 'elephant') {
+    // Tiny tail
+    ctx.strokeStyle = spec.secondaryColor;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-44, -8);
+    ctx.quadraticCurveTo(-51, 0, -47, 8);
+    ctx.stroke();
+
+    // Layered big ear + pink inner
     ctx.fillStyle = spec.accentColor;
     ctx.beginPath();
-    ctx.ellipse(12, -4, 11, 14, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(12, -5, 13, 16, -0.2, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#475569';
     ctx.lineWidth = 2;
     ctx.stroke();
-
-    ctx.fillStyle = '#FFFBEB';
+    ctx.fillStyle = 'rgba(244, 114, 182, 0.35)';
     ctx.beginPath();
-    ctx.moveTo(30, 8);
-    ctx.quadraticCurveTo(44, 12, 46, 2);
-    ctx.quadraticCurveTo(38, 6, 30, 4);
+    ctx.ellipse(11, -4, 7, 10, -0.2, 0, Math.PI * 2);
     ctx.fill();
 
-    drawRosyCheek(24, -3);
-    drawExpressiveEye(25, -10, 2.5);
+    // Trunk ridge lines
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 1.5;
+    [0, 6, 12].forEach((ty) => {
+      ctx.beginPath();
+      ctx.moveTo(35, ty);
+      ctx.lineTo(43, ty);
+      ctx.stroke();
+    });
+
+    // Ivory tusk
+    ctx.fillStyle = '#FFFBEB';
+    ctx.strokeStyle = '#94A3B8';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(32, 9);
+    ctx.quadraticCurveTo(49, 14, 52, 2);
+    ctx.quadraticCurveTo(42, 7, 32, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    drawRosyCheek(27, -4);
+    drawExpressiveEye(28, -12, 2.6);
+    drawPanicSweat(18, -22);
   } else if (spec.id === 'bear') {
+    // Fuzzy ears + inner cream pads
     ctx.fillStyle = spec.secondaryColor;
     ctx.beginPath();
-    ctx.arc(15, -26, 6, 0, Math.PI * 2);
-    ctx.arc(29, -26, 6, 0, Math.PI * 2);
+    ctx.arc(16, -29, 7, 0, Math.PI * 2);
+    ctx.arc(32, -29, 7, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = spec.accentColor;
     ctx.beginPath();
-    ctx.ellipse(29, -12, 7, 5.5, 0, 0, Math.PI * 2);
+    ctx.arc(16, -29, 3.8, 0, Math.PI * 2);
+    ctx.arc(32, -29, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Belly patch
+    ctx.fillStyle = 'rgba(253, 230, 138, 0.28)';
+    ctx.beginPath();
+    ctx.ellipse(-2, 4, 16, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Muzzle + glossy nose
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.ellipse(32, -14, 8, 6, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#0F172A';
     ctx.beginPath();
-    ctx.arc(32, -13, 2.2, 0, Math.PI * 2);
+    ctx.arc(35, -15, 2.6, 0, Math.PI * 2);
     ctx.fill();
-    drawRosyCheek(23, -12);
-    drawExpressiveEye(24, -18, 2.2);
+
+    drawRosyCheek(26, -14);
+    drawExpressiveEye(27, -21, 2.4);
+    drawPanicSweat(14, -28);
   } else if (spec.id === 'rhino') {
-    drawExpressiveEye(31, -7, 2.4);
-    ctx.fillStyle = spec.accentColor;
+    // Armored skin plate folds
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.moveTo(34, -13);
-    ctx.lineTo(42, -28);
-    ctx.lineTo(42, -11);
-    ctx.closePath();
-    ctx.fill();
-  } else if (spec.id === 'fox') {
-    ctx.fillStyle = spec.accentColor;
-    ctx.beginPath();
-    ctx.arc(-36, -6, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = spec.primaryColor;
-    ctx.beginPath();
-    ctx.moveTo(17, -19);
-    ctx.lineTo(22, -31);
-    ctx.lineTo(28, -19);
-    ctx.closePath();
-    ctx.fill();
-    drawRosyCheek(26, -6);
-    drawExpressiveEye(28, -11, 2.2);
-  } else if (spec.id === 'cat') {
-    ctx.fillStyle = spec.primaryColor;
-    ctx.beginPath();
-    ctx.moveTo(12, -19);
-    ctx.lineTo(15, -30);
-    ctx.lineTo(21, -19);
-    ctx.moveTo(22, -19);
-    ctx.lineTo(27, -30);
-    ctx.lineTo(30, -19);
-    ctx.fill();
-    drawRosyCheek(24, -6);
-    drawExpressiveEye(24, -11, 2.4, '#10B981');
-  } else if (spec.id === 'eagle') {
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(0, -18, 10, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#1E293B';
-    ctx.lineWidth = 2;
+    ctx.moveTo(-14, -15);
+    ctx.quadraticCurveTo(-10, 0, -14, 15);
+    ctx.moveTo(14, -15);
+    ctx.quadraticCurveTo(18, 0, 14, 15);
     ctx.stroke();
 
-    ctx.fillStyle = spec.accentColor;
+    // Rhino ear
+    ctx.fillStyle = spec.secondaryColor;
     ctx.beginPath();
-    ctx.moveTo(8, -19);
-    ctx.lineTo(18, -16);
-    ctx.lineTo(8, -12);
+    ctx.ellipse(27, -17, 3.5, 6, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Twin curved horns (big front + small rear)
+    ctx.fillStyle = spec.accentColor;
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(37, -14);
+    ctx.quadraticCurveTo(46, -24, 46, -32);
+    ctx.lineTo(45, -12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(31, -14);
+    ctx.lineTo(35, -22);
+    ctx.lineTo(37, -14);
     ctx.closePath();
     ctx.fill();
 
-    drawExpressiveEye(3, -19, 2.2);
+    drawRosyCheek(32, -3);
+    drawExpressiveEye(33, -9, 2.5);
+    drawPanicSweat(22, -20);
+  } else if (spec.id === 'fox') {
+    // Fluffy white tail tip
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.arc(-34, -6, 6.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White chest fur
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.ellipse(15, 2, 7, 8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pointed dark-tipped ears
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(15, -19);
+    ctx.lineTo(20, -31);
+    ctx.lineTo(26, -19);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#1E293B';
+    ctx.beginPath();
+    ctx.moveTo(18, -26);
+    ctx.lineTo(20, -31);
+    ctx.lineTo(23, -26);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cute nose
+    ctx.fillStyle = '#0F172A';
+    ctx.beginPath();
+    ctx.arc(32, -9, 2.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawRosyCheek(24, -6);
+    drawExpressiveEye(26, -11, 2.2);
+    drawPanicSweat(14, -22);
+  } else if (spec.id === 'cat') {
+    // Tail tip stripe
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.arc(-20, -13, 3.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pointed ears + pink inner triangles
+    ctx.fillStyle = spec.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(9, -15);
+    ctx.lineTo(12, -24);
+    ctx.lineTo(17, -15);
+    ctx.moveTo(18, -15);
+    ctx.lineTo(22, -24);
+    ctx.lineTo(25, -15);
+    ctx.fill();
+    ctx.fillStyle = '#FDA4AF';
+    ctx.beginPath();
+    ctx.moveTo(11, -16);
+    ctx.lineTo(12, -21);
+    ctx.lineTo(15, -16);
+    ctx.fill();
+
+    // Whiskers
+    ctx.strokeStyle = '#78350F';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(22, -7);
+    ctx.lineTo(28, -8);
+    ctx.moveTo(22, -5);
+    ctx.lineTo(28, -4);
+    ctx.stroke();
+
+    drawRosyCheek(19, -5);
+    drawExpressiveEye(20, -9, 2.1, '#10B981');
+    drawPanicSweat(9, -18);
+  } else if (spec.id === 'eagle') {
+    // Wing feather scallops
+    ctx.strokeStyle = spec.accentColor;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-25, -2);
+    ctx.lineTo(-14, -2);
+    ctx.moveTo(14, -2);
+    ctx.lineTo(25, -2);
+    ctx.stroke();
+
+    // White feathered head
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(0, -14, 8.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    // Hooked golden beak
+    ctx.fillStyle = spec.accentColor;
+    ctx.beginPath();
+    ctx.moveTo(6, -15);
+    ctx.lineTo(15, -12);
+    ctx.lineTo(6, -9);
+    ctx.closePath();
+    ctx.fill();
+
+    // Talons
+    ctx.fillStyle = spec.accentColor;
+    ctx.fillRect(-7, 11, 4, 3);
+    ctx.fillRect(3, 11, 4, 3);
+
+    drawExpressiveEye(2.5, -15, 1.9);
+    drawPanicSweat(-8, -20);
   }
 
   // Player color badge dot
@@ -575,7 +841,7 @@ function drawAnimalSilhouette(
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
+    ctx.arc(0, 0, 4.8, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
@@ -798,7 +1064,6 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       velocityIterations: 4,
     });
 
-    // 300px tall solid collider extending downward below the visible grass top so animals never tunnel
     const platformColliderH = 300;
     const platformTopY = PLATFORM_Y - PLATFORM_H / 2;
     const platform = Matter.Bodies.rectangle(
@@ -808,9 +1073,9 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       platformColliderH,
       {
         isStatic: true,
-        friction: 0.9,
-        frictionStatic: 8,
-        restitution: 0.0,
+        friction: 0.65,
+        frictionStatic: 1.5,
+        restitution: 0.05,
         slop: 0.02,
         chamfer: { radius: 8 },
         label: 'platform',
@@ -1120,6 +1385,9 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         if (body.isStatic) continue;
         const meta = metaMapRef.current.get(body.id);
         if (!meta) continue;
+        const spd = body.isSleeping ? 0 : Math.hypot(body.velocity.x, body.velocity.y);
+        const isPanicking =
+          !body.isSleeping && (Math.abs(body.angularVelocity) > 0.045 || spd > 2.6);
         drawAnimalSilhouette(
           ctx,
           meta.spec,
@@ -1130,7 +1398,8 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           1,
           false,
           now,
-          body.id
+          body.id,
+          isPanicking
         );
       }
 
@@ -1214,7 +1483,6 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
 
     let accumulatorMs = 0;
     const FIXED_STEP_MS = 1000 / 60;
-    const FIXED_STEP_SEC = FIXED_STEP_MS / 1000;
 
     const step = (now: number) => {
       const rawDtMs = Math.min(33.33, Math.max(0, now - lastTs));
@@ -1230,38 +1498,27 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       }
 
       // Fixed-timestep Matter.js update (always 1000/60 ms per step, max 2 steps per frame)
+      // Gentle natural angular damping (0.15 -> ~0.96 retention per step) with zero magnetic edge sticking
       accumulatorMs += rawDtMs;
       let physicsSteps = 0;
       while (accumulatorMs >= FIXED_STEP_MS && physicsSteps < 2) {
         const bodiesPre = Matter.Composite.allBodies(engine.world);
         for (const b of bodiesPre) {
           if (b.isStatic || b.isSleeping) continue;
-          const meta = metaMapRef.current.get(b.id);
-          Matter.Body.setAngularVelocity(b, b.angularVelocity * 0.88);
-          if (meta && now - meta.droppedAt > 240) {
-            const spd = Math.hypot(b.velocity.x, b.velocity.y);
-            if (spd < 0.14 && Math.abs(b.angularVelocity) < 0.025) {
-              Matter.Body.setVelocity(b, {
-                x: b.velocity.x * 0.5,
-                y: b.velocity.y * 0.5,
-              });
-            }
-          }
+          Matter.Body.setAngularVelocity(b, b.angularVelocity * 0.96);
         }
         Matter.Engine.update(engine, FIXED_STEP_MS);
         accumulatorMs -= FIXED_STEP_MS;
         physicsSteps++;
       }
 
-      // Smooth rising camera interpolation
-      cameraYRef.current += (targetCameraYRef.current - cameraYRef.current) * Math.min(1, dt * 6.5);
-
-      // Check stacked bodies for height, settled heavy density, & water falls
+      // Check stacked bodies for height & water falls
       let highestY = PLATFORM_Y - PLATFORM_H / 2;
       let maxVel = 0;
       let fellBody: { body: Matter.Body; meta: PlacedBodyMeta } | null = null;
+      let activeDropBody: Matter.Body | null = null;
+      let lowestMovingBody: Matter.Body | null = null;
       let stackedCount = 0;
-      const stepElapsedSec = physicsSteps * FIXED_STEP_SEC;
 
       const bodies = Matter.Composite.allBodies(engine.world);
       for (const b of bodies) {
@@ -1269,6 +1526,10 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         const meta = metaMapRef.current.get(b.id);
         if (!meta) continue;
         stackedCount++;
+
+        if (b.id === lastDropBodyIdRef.current) {
+          activeDropBody = b;
+        }
 
         if (b.position.y > WATER_Y || b.position.x < -140 || b.position.x > WORLD_W + 140) {
           fellBody = { body: b, meta };
@@ -1279,23 +1540,35 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           highestY = b.bounds.min.y;
         }
 
-        const spd = b.isSleeping ? 0 : Math.hypot(b.velocity.x, b.velocity.y);
-        if (!meta.hasHeavyDensity && stepElapsedSec > 0) {
-          if (spd < 0.15) {
-            meta.settledDuration += stepElapsedSec;
-            if (meta.settledDuration >= 0.8) {
-              meta.hasHeavyDensity = true;
-              Matter.Body.setDensity(b, ANIMAL_SETTLED_DENSITY);
-            }
-          } else {
-            meta.settledDuration = 0;
+        if (!b.isSleeping) {
+          const spd = Math.hypot(b.velocity.x, b.velocity.y);
+          maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 14);
+          if (b.velocity.y > 0.65 && (!lowestMovingBody || b.position.y > lowestMovingBody.position.y)) {
+            lowestMovingBody = b;
           }
         }
+      }
 
-        if (!b.isSleeping) {
-          maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 14);
+      // Dynamic Drop-Tracking Camera: follow falling animals down to platform/water, then back up on next turn
+      const stageMetrics = getStageMetrics(viewSizeRef.current.w, viewSizeRef.current.h);
+      const topCameraY = Math.min(
+        0,
+        highestY - DROP_CLEARANCE - stageMetrics.initialHoverY
+      );
+      if (turnStageRef.current === 'SETTLING' || turnStageRef.current === 'COLLAPSED') {
+        const trackedBody = fellBody?.body ?? lowestMovingBody ?? activeDropBody;
+        if (trackedBody) {
+          const desiredFollowCamY =
+            (stageMetrics.baseGroundScreenY - viewSizeRef.current.h * 0.5) / stageMetrics.scale +
+            (trackedBody.position.y - PLATFORM_Y);
+          // Clamp between tower top and slightly past platform so both base & water splash stay visible
+          targetCameraYRef.current = Math.min(36, Math.max(topCameraY, desiredFollowCamY));
         }
       }
+
+      const camSpeed =
+        turnStageRef.current === 'SETTLING' || turnStageRef.current === 'COLLAPSED' ? 8.5 : 6.5;
+      cameraYRef.current += (targetCameraYRef.current - cameraYRef.current) * Math.min(1, dt * camSpeed);
 
       highestStackedYRef.current = highestY;
       const meters = Math.max(
@@ -1568,8 +1841,6 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       playerName: activeP?.name ?? 'لاعب',
       droppedAt: performance.now(),
       highestY: spawnY,
-      settledDuration: 0,
-      hasHeavyDensity: false,
     });
     lastDropBodyIdRef.current = body.id;
     Matter.World.add(engineRef.current.world, body);
@@ -1648,7 +1919,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
               دور: <span style={{ color: activeColor.hex }}>{activePlayer?.name}</span>
             </span>
             <span className="text-xs font-extrabold text-amber-300 shrink-0">
-              · {currentAnimal.emoji} {currentAnimal.name}
+              · {currentAnimal.emoji} {currentAnimal.name} ({WEIGHT_TIER_LABEL[currentAnimal.weightTier]})
             </span>
             {Object.keys(eliminatedSet).length > 0 && (
               <span className="text-[11px] font-bold text-rose-300 shrink-0">
