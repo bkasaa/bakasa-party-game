@@ -62,6 +62,7 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
   const [roundDeltas, setRoundDeltas] = useState<RoundDelta[]>([]);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const usedPromptIdsRef = useRef<Set<string>>(new Set());
+  const roundSettledRef = useRef<boolean>(false);
 
   const isRoundInProgress = phase === 'BIDDING' || phase === 'VERIFYING';
   useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
@@ -88,6 +89,8 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
   };
 
   const finishVerification = (won: boolean, finalCount: number) => {
+    if (roundSettledRef.current) return;
+    roundSettledRef.current = true;
     const bidder = players[bidderIndex] ?? players[0];
     const delta = won ? targetBid * 15 : -15;
     const updated = {
@@ -147,13 +150,14 @@ export const FootballAuctionFlow: React.FC<FootballAuctionFlowProps> = ({
 
   const handleStartVerifying = guard(() => {
     soundManager.play('next');
+    roundSettledRef.current = false;
     setProgress(0);
     setTimeLeft(settings.turnSeconds);
     setPhase('VERIFYING');
   });
 
   const handleIncrementAnswer = () => {
-    if (phase !== 'VERIFYING') return;
+    if (phase !== 'VERIFYING' || roundSettledRef.current) return;
     const next = progress + 1;
     setProgress(next);
     soundManager.play('catch');

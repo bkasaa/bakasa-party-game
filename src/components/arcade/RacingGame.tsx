@@ -773,6 +773,36 @@ export const RacingGame: React.FC<RacingGameProps> = ({
     ctx.restore();
   }, []);
 
+  useEffect(() => {
+    if (!isRoundActive) {
+      wheelPointersRef.current.clear();
+      return;
+    }
+    const handleResize = () => {
+      const prev = arenaSizeRef.current;
+      syncArenaSize();
+      const next = arenaSizeRef.current;
+      if (phase === 'COUNTDOWN' && (prev.w !== next.w || prev.h !== next.h)) {
+        resetMatchState();
+        drawScene(performance.now());
+      } else {
+        for (const car of carsRef.current) {
+          car.x = Math.max(16, Math.min(next.w - 16, car.x));
+          car.y = Math.max(16, Math.min(next.h - 16, car.y));
+        }
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, syncArenaSize, resetMatchState, drawScene]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;

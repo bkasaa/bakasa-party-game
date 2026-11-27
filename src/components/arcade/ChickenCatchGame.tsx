@@ -615,6 +615,36 @@ export const ChickenCatchGame: React.FC<ChickenCatchGameProps> = ({
     ctx.restore();
   }, []);
 
+  useEffect(() => {
+    if (!isRoundActive) {
+      joyPointersRef.current.clear();
+      return;
+    }
+    const handleResize = () => {
+      syncArenaSize();
+      const { w, h } = arenaSizeRef.current;
+      const currentPlacements = getCornerPlacements(players.length);
+      playerEntitiesRef.current.forEach((pe, idx) => {
+        const slot = currentPlacements[idx]?.slot ?? 'bottom-right';
+        pe.pen = computePenRect(slot, w, h);
+        pe.x = Math.max(22, Math.min(w - 22, pe.x));
+        pe.y = Math.max(22, Math.min(h - 22, pe.y));
+      });
+      if (phase === 'COUNTDOWN') {
+        drawScene(performance.now());
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, players.length, syncArenaSize, drawScene]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;

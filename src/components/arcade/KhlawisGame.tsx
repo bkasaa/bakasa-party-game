@@ -2191,7 +2191,7 @@ export const KhlawisGame: React.FC<KhlawisGameProps> = ({
   // Native multi-touch handlers (isolated by touch.identifier across all 4 quadrants)
   const handleJoyTouchStart = (slotIdx: number) => (e: React.TouchEvent<HTMLDivElement>) => {
     const slot = hunterJoysRef.current[slotIdx];
-    if (!slot) return;
+    if (!slot || slot.touchId !== null) return;
     const touch = e.changedTouches[0];
     if (!touch) return;
     e.stopPropagation();

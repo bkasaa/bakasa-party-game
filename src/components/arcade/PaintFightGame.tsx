@@ -579,6 +579,30 @@ export const PaintFightGame: React.FC<PaintFightGameProps> = ({
     ctx.restore();
   }, []);
 
+  useEffect(() => {
+    if (!isRoundActive) {
+      joyPointersRef.current.clear();
+      return;
+    }
+    const handleResize = () => {
+      syncArenaSize();
+      const { w, h } = arenaSizeRef.current;
+      for (const r of rollersRef.current) {
+        r.x = Math.max(24, Math.min(w - 24, r.x));
+        r.y = Math.max(24, Math.min(h - 24, r.y));
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, syncArenaSize]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;

@@ -562,6 +562,35 @@ export const HappyBirdsGame: React.FC<HappyBirdsGameProps> = ({
     ctx.restore();
   }, []);
 
+  useEffect(() => {
+    if (!isRoundActive) return;
+    const handleResize = () => {
+      syncArenaSize();
+      const { w, h } = arenaSizeRef.current;
+      const minY = Math.max(58, h * 0.16);
+      const maxY = Math.min(h - 58, h * 0.84);
+      for (const sp of spikesRef.current) {
+        sp.y = Math.max(minY, Math.min(maxY, sp.y));
+      }
+      for (const b of birdsRef.current) {
+        b.x = Math.max(24, Math.min(w - 24, b.x));
+        b.y = Math.max(54, Math.min(h - 54, b.y));
+      }
+      if (phase === 'COUNTDOWN') {
+        drawScene(performance.now());
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, syncArenaSize, drawScene]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;

@@ -77,8 +77,10 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
   const isRoundInProgress = phase === 'PLAYING';
   useNavigationGuard(isRoundInProgress, () => setShowExitConfirm(true));
 
-  const playerX = players[playerXIdx] ?? players[0];
-  const playerO = players[playerOIdx] ?? players[1] ?? players[0];
+  const safePlayerXIdx = Math.min(playerXIdx, Math.max(0, players.length - 1));
+  const safePlayerOIdx = Math.min(playerOIdx, Math.max(0, players.length - 1));
+  const playerX = players[safePlayerXIdx] ?? players[0];
+  const playerO = players[safePlayerOIdx] ?? players[1] ?? players[0];
   const currentPlayer = turnMark === 'X' ? playerX : playerO;
 
   const handleSettingsChange = (next: FootballGlobalSettings) => {
@@ -100,6 +102,8 @@ export const FootballTicTacToeFlow: React.FC<FootballTicTacToeFlowProps> = ({
   const handleStartGame = guard(() => {
     soundManager.unlock();
     soundManager.play('next');
+    setDeltasMap({});
+    setRoundDeltas([]);
     startFreshMatch(settings.scope);
     setPhase('PLAYING');
   });

@@ -288,6 +288,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
   const goalPauseUntilRef = useRef<number>(0);
   const goalCelebrateUntilRef = useRef<number>(0);
   const goalTimeoutRef = useRef<number | null>(null);
+  const isGoalScoredRef = useRef<boolean>(false);
+  const ballVisibleRef = useRef<boolean>(true);
   const joyPointersRef = useRef<
     Map<number, { playerIdx: number; cx: number; cy: number; x: number; y: number; rect: DOMRect }>
   >(new Map());
@@ -379,6 +381,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       ent.vy = 0;
       ent.angle = 0; // Facing RIGHT toward Right Goal
       ent.slideUntil = 0;
+      ent.slideVx = 0;
+      ent.slideVy = 0;
       ent.tackleCooldownUntil = 0;
       ent.grabCooldownUntil = 0;
     });
@@ -392,6 +396,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       ent.vy = 0;
       ent.angle = Math.PI; // Facing LEFT toward Left Goal
       ent.slideUntil = 0;
+      ent.slideVx = 0;
+      ent.slideVy = 0;
       ent.tackleCooldownUntil = 0;
       ent.grabCooldownUntil = 0;
     });
@@ -405,6 +411,8 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       lastTouchIdx: null,
       spin: 0,
     };
+    isGoalScoredRef.current = false;
+    ballVisibleRef.current = true;
   }, []);
 
   const resetMatchState = useCallback(() => {
@@ -493,6 +501,11 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
   const finishRound = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
+    if (goalTimeoutRef.current !== null) {
+      window.clearTimeout(goalTimeoutRef.current);
+      goalTimeoutRef.current = null;
+    }
+    setGoalBanner(null);
 
     const sc = scoresRef.current;
     const best = Math.max(sc[0], sc[1]);
@@ -703,7 +716,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       const ball = ballRef.current;
 
       // Directional Aim Arrow when possessor aims with joystick
-      if (ball.possessorIdx !== null) {
+      if (ballVisibleRef.current && !isGoalScoredRef.current && ball.possessorIdx !== null) {
         const joy = joysRef.current[ball.possessorIdx];
         if (joy && joy.active && joy.lastValidPull > 0.14) {
           const aimLen = 14 + joy.lastValidPull * 26;
@@ -736,11 +749,19 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       // Players
       for (const p of entitiesRef.current) {
         const ringHex = p.teamIdx === 0 ? leftTeamTheme.hex : rightTeamTheme.hex;
-        drawSoccerPlayer(ctx, p, ball.possessorIdx === p.playerIdx, now, ringHex);
+        drawSoccerPlayer(
+          ctx,
+          p,
+          ballVisibleRef.current && !isGoalScoredRef.current && ball.possessorIdx === p.playerIdx,
+          now,
+          ringHex
+        );
       }
 
-      // Ball
-      drawSoccerBall(ctx, ball);
+      // Ball (hidden immediately when a goal is scored until kickoff reset)
+      if (ballVisibleRef.current && !isGoalScoredRef.current) {
+        drawSoccerBall(ctx, ball);
+      }
 
       // Popups
       for (const pop of popupsRef.current) {
@@ -783,6 +804,12 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     };
   }, [isRoundActive, isRotatedPortrait, phase, syncArenaSize, placeKickoffPositions, drawScene]);
 
+  useEffect(() => {
+    if (!isRoundActive) {
+      joyPointersRef.current.clear();
+    }
+  }, [isRoundActive]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;
@@ -823,6 +850,15 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     let rafId = 0;
 
     const handleGoalScored = (scoringTeamIdx: 0 | 1, now: number) => {
+      if (isGoalScoredRef.current || finishedRef.current) return;
+      isGoalScoredRef.current = true;
+      ballVisibleRef.current = false;
+
+      // Immediately freeze and despawn ball so it cannot bounce or trigger extra goals
+      ballRef.current.possessorIdx = null;
+      ballRef.current.vx = 0;
+      ballRef.current.vy = 0;
+
       scoresRef.current[scoringTeamIdx] = (scoresRef.current[scoringTeamIdx] ?? 0) + 1;
       setScores([...scoresRef.current]);
       soundManager.play('goal');
@@ -843,9 +879,6 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       // Brief 1.1s non-blocking goal celebration banner
       goalPauseUntilRef.current = now + 1100;
       goalCelebrateUntilRef.current = now + 1100;
-      ballRef.current.possessorIdx = null;
-      ballRef.current.vx = 0;
-      ballRef.current.vy = 0;
       setGoalBanner({ teamIdx: scoringTeamIdx, scorerName });
 
       if (goalTimeoutRef.current !== null) {
@@ -876,7 +909,11 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         }
       }
 
-      if (elapsedSec >= effectiveDuration && now >= goalCelebrateUntilRef.current) {
+      if (
+        elapsedSec >= effectiveDuration &&
+        !isGoalScoredRef.current &&
+        now >= goalCelebrateUntilRef.current
+      ) {
         drawScene(now);
         finishRound();
         return;
@@ -888,7 +925,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
       const cy = (pb.top + pb.bottom) / 2;
       const ball = ballRef.current;
 
-      if (now >= goalPauseUntilRef.current) {
+      if (now >= goalPauseUntilRef.current && !isGoalScoredRef.current) {
         // Move players (joystick or slide tackle dash)
         for (let i = 0; i < entitiesRef.current.length; i++) {
           const p = entitiesRef.current[i];
@@ -1047,7 +1084,7 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
         }
 
         // Check Goal Scoring (Left Goal & Right Goal on horizontal pitch)
-        const inGoalY = Math.abs(ball.y - cy) <= pb.goalHalfH - BALL_R * 0.3;
+        const inGoalY = Math.abs(ball.y - cy) <= pb.goalHalfH - POST_R * 0.4;
 
         // LEFT GOAL entered -> Right Team (Team 1) scores!
         if (ball.x <= pb.left - 4 && inGoalY) {
@@ -1247,7 +1284,12 @@ export const SoccerGame: React.FC<SoccerGameProps> = ({
     const ball = ballRef.current;
     const now = performance.now();
 
-    if (phase === 'PLAYING' && p && now >= goalPauseUntilRef.current) {
+    if (
+      phase === 'PLAYING' &&
+      p &&
+      now >= goalPauseUntilRef.current &&
+      !isGoalScoredRef.current
+    ) {
       const aimLen = Math.hypot(j.lastValidDx, j.lastValidDy);
       const ax = aimLen > 0.01 ? j.lastValidDx / aimLen : Math.cos(p.angle);
       const ay = aimLen > 0.01 ? j.lastValidDy / aimLen : Math.sin(p.angle);

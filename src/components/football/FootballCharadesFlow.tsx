@@ -269,6 +269,7 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
   });
 
   const handleCorrectCard = () => {
+    if (phase !== 'ACTIVE_TURN') return;
     soundManager.play('catch');
     triggerHaptic(22);
     setTurnCorrectWords((prev) => [...prev, currentCard.word]);
@@ -276,6 +277,7 @@ export const FootballCharadesFlow: React.FC<FootballCharadesFlowProps> = ({
   };
 
   const handleSkipCard = () => {
+    if (phase !== 'ACTIVE_TURN') return;
     soundManager.play('click');
     setTurnSkippedCount((prev) => prev + 1);
     setCurrentCard(drawNextCard());

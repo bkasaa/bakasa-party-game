@@ -538,6 +538,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
                       transform:
                         animResultVisible && lastKickIsGoal ? 'scale(1.03)' : 'scale(1)',
                       transformOrigin: '180px 80px',
+                      transformBox: 'view-box',
                       transition: 'transform 220ms ease-out',
                     }}
                   >
@@ -583,6 +584,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
                         ? `translate(${keeperTargetX - 180}px, ${keeperChoice === 'center' ? -8 : 4}px) rotate(${keeperTilt}deg)`
                         : 'translate(0px, 0px) rotate(0deg)',
                       transformOrigin: '180px 104px',
+                      transformBox: 'view-box',
                       transition: 'transform 700ms cubic-bezier(0.22, 1, 0.36, 1)',
                     }}
                   >
@@ -604,6 +606,7 @@ export const PenaltyShootoutFlow: React.FC<PenaltyShootoutFlowProps> = ({
                         ? `translate(${ballFinalX - 180}px, ${ballFinalY - 196}px) scale(0.72) rotate(540deg)`
                         : 'translate(0px, 0px) scale(1) rotate(0deg)',
                       transformOrigin: '180px 196px',
+                      transformBox: 'view-box',
                       transition: animResultVisible && !lastKickIsGoal
                         ? 'transform 450ms cubic-bezier(0.22, 1, 0.36, 1)'
                         : 'transform 760ms cubic-bezier(0.16, 1, 0.3, 1)',

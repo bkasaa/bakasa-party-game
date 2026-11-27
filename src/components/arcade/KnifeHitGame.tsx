@@ -660,6 +660,25 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
     ctx.restore();
   }, [getGeometry, players, stageTheme.bgInner, stageTheme.bgOuter, themeIdx]);
 
+  useEffect(() => {
+    if (!isRoundActive) return;
+    const handleResize = () => {
+      syncArenaSize();
+      if (phase === 'COUNTDOWN') {
+        drawScene();
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, syncArenaSize, drawScene]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;
@@ -751,122 +770,135 @@ export const KnifeHitGame: React.FC<KnifeHitGameProps> = ({
       }
       logRecoilRef.current = Math.max(0, logRecoilRef.current - 28 * dt);
 
-      const { cx, cy, logR } = getGeometry();
+      const { w, h, cx, cy, logR } = getGeometry();
+      const maxFlightDist = Math.max(w, h) + 80;
+      const subSteps = dt > 0.022 ? 2 : 1;
+      const subDt = dt / subSteps;
       const remainingFlying: FlyingKnife[] = [];
 
       for (const fk of flyingRef.current) {
-        fk.x += fk.vx * dt;
-        fk.y += fk.vy * dt;
+        let resolved = false;
+        for (let sIdx = 0; sIdx < subSteps; sIdx++) {
+          fk.x += fk.vx * subDt;
+          fk.y += fk.vy * subDt;
 
-        const dx = fk.x - cx;
-        const dy = fk.y - cy;
-        const dist = Math.hypot(dx, dy);
+          const dx = fk.x - cx;
+          const dy = fk.y - cy;
+          const dist = Math.hypot(dx, dy);
 
-        if (dist <= logR + 14) {
-          const worldHitAngle = Math.atan2(dy, dx);
-          const relAngle = normalizeAngle(worldHitAngle - logAngleRef.current);
+          if (dist <= logR + 14) {
+            resolved = true;
+            const worldHitAngle = Math.atan2(dy, dx);
+            const relAngle = normalizeAngle(worldHitAngle - logAngleRef.current);
 
-          const collided = stuckRef.current.some(
-            (sk) => Math.abs(normalizeAngle(relAngle - sk.relAngle)) < COLLISION_ARC
-          );
+            const collided = stuckRef.current.some(
+              (sk) => Math.abs(normalizeAngle(relAngle - sk.relAngle)) < COLLISION_ARC
+            );
 
-          if (collided) {
-            soundManager.play('shatter');
-            triggerHaptic(150);
-            setShaking(true);
-            if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
-            shakeTimerId = window.setTimeout(() => setShaking(false), 260);
-            eliminatedRef.current[fk.playerIdx] = true;
-            setEliminatedList([...eliminatedRef.current]);
+            if (collided) {
+              soundManager.play('shatter');
+              triggerHaptic(150);
+              setShaking(true);
+              if (shakeTimerId !== null) window.clearTimeout(shakeTimerId);
+              shakeTimerId = window.setTimeout(() => setShaking(false), 260);
+              eliminatedRef.current[fk.playerIdx] = true;
+              setEliminatedList([...eliminatedRef.current]);
 
-            // Shatter knife into flying shards (capped at <= 60)
-            for (let s = 0; s < 5; s++) {
-              if (shardsRef.current.length >= 60) shardsRef.current.shift();
-              const outAngle = worldHitAngle + (Math.random() - 0.5) * 1.3;
-              const spd = 220 + Math.random() * 220;
-              shardsRef.current.push({
-                x: fk.x,
-                y: fk.y,
-                vx: Math.cos(outAngle) * spd,
-                vy: Math.sin(outAngle) * spd,
-                angle: fk.angle + s,
-                spin: (Math.random() - 0.5) * 20,
-                color: s < 2 ? fk.hex : '#e2e8f0',
+              // Shatter knife into flying shards (capped at <= 60)
+              for (let s = 0; s < 5; s++) {
+                if (shardsRef.current.length >= 60) shardsRef.current.shift();
+                const outAngle = worldHitAngle + (Math.random() - 0.5) * 1.3;
+                const spd = 220 + Math.random() * 220;
+                shardsRef.current.push({
+                  x: fk.x,
+                  y: fk.y,
+                  vx: Math.cos(outAngle) * spd,
+                  vy: Math.sin(outAngle) * spd,
+                  angle: fk.angle + s,
+                  spin: (Math.random() - 0.5) * 20,
+                  color: s < 2 ? fk.hex : '#e2e8f0',
+                  life: 1,
+                });
+              }
+              flashesRef.current.push({ x: fk.x, y: fk.y, life: 1 });
+
+              // Check if all players are eliminated or only 1 survivor holds strict lead
+              const survivors = players
+                .map((_, i) => i)
+                .filter((i) => !eliminatedRef.current[i]);
+              if (survivors.length === 0) {
+                drawScene();
+                finishMatch();
+                return;
+              }
+              if (survivors.length === 1 && players.length > 1) {
+                const survIdx = survivors[0];
+                const maxElimScore = Math.max(
+                  ...players.map((_, i) => (eliminatedRef.current[i] ? countsRef.current[i] : -1))
+                );
+                if (countsRef.current[survIdx] > maxElimScore) {
+                  drawScene();
+                  finishMatch(survIdx);
+                  return;
+                }
+              }
+            } else {
+              soundManager.play('hit');
+              triggerHaptic(25);
+              logRecoilRef.current = 7;
+
+              // Check bonus apple slice!
+              let bonusAppleHit = false;
+              for (const ap of applesRef.current) {
+                if (!ap.sliced && Math.abs(normalizeAngle(relAngle - ap.relAngle)) < 0.25) {
+                  ap.sliced = true;
+                  bonusAppleHit = true;
+                  soundManager.play('gold');
+                  for (let s = 0; s < 4; s++) {
+                    if (shardsRef.current.length >= 60) shardsRef.current.shift();
+                    shardsRef.current.push({
+                      x: cx + Math.cos(worldHitAngle) * (logR + 10),
+                      y: cy + Math.sin(worldHitAngle) * (logR + 10),
+                      vx: (Math.random() - 0.5) * 260,
+                      vy: (Math.random() - 0.5) * 260,
+                      angle: s,
+                      spin: 12,
+                      color: s % 2 === 0 ? '#ef4444' : '#fef08a',
+                      life: 1,
+                    });
+                  }
+                }
+              }
+
+              stuckRef.current.push({
+                relAngle,
+                hex: fk.hex,
+                darkHex: fk.darkHex,
+                playerId: players[fk.playerIdx].id,
+              });
+              flashesRef.current.push({
+                x: cx + Math.cos(worldHitAngle) * logR,
+                y: cy + Math.sin(worldHitAngle) * logR,
                 life: 1,
               });
-            }
-            flashesRef.current.push({ x: fk.x, y: fk.y, life: 1 });
 
-            // Check if all players are eliminated or only 1 survivor holds strict lead
-            const survivors = players
-              .map((_, i) => i)
-              .filter((i) => !eliminatedRef.current[i]);
-            if (survivors.length === 0) {
-              drawScene();
-              finishMatch();
-              return;
-            }
-            if (survivors.length === 1 && players.length > 1) {
-              const survIdx = survivors[0];
-              const maxElimScore = Math.max(
-                ...players.map((_, i) => (eliminatedRef.current[i] ? countsRef.current[i] : -1))
-              );
-              if (countsRef.current[survIdx] > maxElimScore) {
+              countsRef.current[fk.playerIdx] =
+                (countsRef.current[fk.playerIdx] ?? 0) + (bonusAppleHit ? 2 : 1);
+              setHitCounts([...countsRef.current]);
+
+              if (countsRef.current[fk.playerIdx] >= TARGET_KNIVES) {
                 drawScene();
-                finishMatch(survIdx);
+                finishMatch(fk.playerIdx);
                 return;
               }
             }
-          } else {
-            soundManager.play('hit');
-            triggerHaptic(25);
-            logRecoilRef.current = 7;
-
-            // Check bonus apple slice!
-            let bonusAppleHit = false;
-            for (const ap of applesRef.current) {
-              if (!ap.sliced && Math.abs(normalizeAngle(relAngle - ap.relAngle)) < 0.25) {
-                ap.sliced = true;
-                bonusAppleHit = true;
-                soundManager.play('gold');
-                for (let s = 0; s < 4; s++) {
-                  shardsRef.current.push({
-                    x: cx + Math.cos(worldHitAngle) * (logR + 10),
-                    y: cy + Math.sin(worldHitAngle) * (logR + 10),
-                    vx: (Math.random() - 0.5) * 260,
-                    vy: (Math.random() - 0.5) * 260,
-                    angle: s,
-                    spin: 12,
-                    color: s % 2 === 0 ? '#ef4444' : '#fef08a',
-                    life: 1,
-                  });
-                }
-              }
-            }
-
-            stuckRef.current.push({
-              relAngle,
-              hex: fk.hex,
-              darkHex: fk.darkHex,
-              playerId: players[fk.playerIdx].id,
-            });
-            flashesRef.current.push({
-              x: cx + Math.cos(worldHitAngle) * logR,
-              y: cy + Math.sin(worldHitAngle) * logR,
-              life: 1,
-            });
-
-            countsRef.current[fk.playerIdx] =
-              (countsRef.current[fk.playerIdx] ?? 0) + (bonusAppleHit ? 2 : 1);
-            setHitCounts([...countsRef.current]);
-
-            if (countsRef.current[fk.playerIdx] >= TARGET_KNIVES) {
-              drawScene();
-              finishMatch(fk.playerIdx);
-              return;
-            }
+            break;
+          } else if (dist > maxFlightDist) {
+            resolved = true;
+            break;
           }
-        } else {
+        }
+        if (!resolved) {
           remainingFlying.push(fk);
         }
       }

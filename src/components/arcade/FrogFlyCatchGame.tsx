@@ -555,6 +555,50 @@ export const FrogFlyCatchGame: React.FC<FrogFlyCatchGameProps> = ({
     [players]
   );
 
+  useEffect(() => {
+    if (!isRoundActive) return;
+    const handleResize = () => {
+      syncArenaSize();
+      const { w, h } = arenaSizeRef.current;
+      const cx = w / 2;
+      const cy = h / 2;
+      const padInsetX = Math.max(82, Math.min(126, w * 0.24));
+      const padInsetY = Math.max(115, Math.min(160, h * 0.21));
+      const spots: Record<CornerSlot, { x: number; y: number }> = {
+        'bottom-right': { x: w - padInsetX, y: h - padInsetY },
+        'top-left': { x: padInsetX, y: padInsetY },
+        'bottom-left': { x: padInsetX, y: h - padInsetY },
+        'top-right': { x: w - padInsetX, y: padInsetY },
+      };
+      const currentPlacements = getCornerPlacements(players.length);
+      frogsRef.current.forEach((frog, idx) => {
+        const slot = currentPlacements[idx]?.slot ?? 'bottom-right';
+        const spot = spots[slot];
+        const baseAngle = Math.atan2(cy - spot.y, cx - spot.x);
+        frog.x = spot.x;
+        frog.y = spot.y;
+        frog.baseAngle = baseAngle;
+        frog.padAngle = baseAngle + Math.PI;
+        if (frog.tonguePhase === 'idle') {
+          frog.angle = baseAngle;
+          frog.lockedAngle = baseAngle;
+        }
+      });
+      if (phase === 'COUNTDOWN') {
+        drawScene(performance.now());
+      }
+    };
+    const ro = new ResizeObserver(handleResize);
+    if (arenaRef.current) ro.observe(arenaRef.current);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, [isRoundActive, phase, players.length, syncArenaSize, drawScene]);
+
   // Countdown sequence
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return;

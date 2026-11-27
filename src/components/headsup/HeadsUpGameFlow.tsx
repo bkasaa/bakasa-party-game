@@ -54,6 +54,7 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
   const [turnLogs, setTurnLogs] = useState<TurnCardLog[]>([]);
   const [flashState, setFlashState] = useState<'none' | 'correct' | 'skip'>('none');
   const [landscapeCard, setLandscapeCard] = useState<boolean>(false);
+  const [cardAreaSize, setCardAreaSize] = useState<{ w: number; h: number }>({ w: 360, h: 560 });
 
   // Gyroscope tilt state
   const [gyroSupported, setGyroSupported] = useState<boolean>(false);
@@ -62,6 +63,7 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
     'unknown' | 'needs_prompt' | 'granted' | 'denied'
   >('unknown');
   const [showExitConfirm, setShowExitConfirm] = useState<boolean>(false);
+  const cardAreaRef = useRef<HTMLDivElement | null>(null);
   const baselineSamplesRef = useRef<number[]>([]);
   const baselineAngleRef = useRef<number | null>(null);
   const lastTiltActionAtRef = useRef<number>(0);
@@ -140,6 +142,28 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (phase !== 'ACTIVE_FOREHEAD') return;
+    const syncCardArea = () => {
+      const el = cardAreaRef.current;
+      if (!el) return;
+      setCardAreaSize({
+        w: Math.max(240, Math.round(el.clientWidth)),
+        h: Math.max(240, Math.round(el.clientHeight)),
+      });
+    };
+    syncCardArea();
+    const ro = new ResizeObserver(syncCardArea);
+    if (cardAreaRef.current) ro.observe(cardAreaRef.current);
+    window.addEventListener('resize', syncCardArea);
+    window.addEventListener('orientationchange', syncCardArea);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncCardArea);
+      window.removeEventListener('orientationchange', syncCardArea);
+    };
+  }, [phase]);
 
   const requestGyroPermission = async () => {
     soundManager.unlock();
@@ -494,56 +518,90 @@ export const HeadsUpGameFlow: React.FC<HeadsUpGameFlowProps> = ({
           </div>
 
           {/* Main Giant Word Card + Huge Thumb-Friendly Side Tap Buttons */}
-          <div
-            className={`flex-1 flex flex-row items-stretch gap-2.5 sm:gap-4 my-1 ${
-              landscapeCard ? 'rotate-90 sm:rotate-0' : ''
-            }`}
-          >
-            {/* Skip Button (Right side in RTL) */}
-            <button
-              type="button"
-              onClick={() => advanceCard('skip')}
-              className="w-24 sm:w-40 min-h-[120px] rounded-3xl bg-amber-500/95 hover:bg-amber-400 active:scale-95 border-2 border-amber-200/80 shadow-xl flex flex-col items-center justify-center gap-2 px-2 py-3 text-slate-950 font-black text-base sm:text-xl transition-transform shrink-0"
-            >
-              <SkipForward className="w-7 h-7 sm:w-9 sm:h-9" />
-              <span>تخطي ⏭️</span>
-            </button>
+          {(() => {
+            const useRotatedLandscape = landscapeCard && cardAreaSize.h > cardAreaSize.w;
+            return (
+              <div
+                ref={cardAreaRef}
+                className="flex-1 relative min-h-0 w-full flex items-center justify-center overflow-hidden my-1"
+              >
+                <div
+                  style={
+                    useRotatedLandscape
+                      ? {
+                          width: `${cardAreaSize.h}px`,
+                          height: `${cardAreaSize.w}px`,
+                          transform: 'rotate(90deg)',
+                          transformOrigin: 'center center',
+                        }
+                      : undefined
+                  }
+                  className={
+                    useRotatedLandscape
+                      ? 'shrink-0 flex flex-row items-stretch gap-3 p-1'
+                      : 'w-full h-full flex flex-row items-stretch gap-2.5 sm:gap-4'
+                  }
+                >
+                  {/* Skip Button (Right side in RTL) */}
+                  <button
+                    type="button"
+                    onClick={() => advanceCard('skip')}
+                    className={`${
+                      useRotatedLandscape
+                        ? 'w-[25%] min-w-[118px] text-xl'
+                        : 'w-26 sm:w-44 text-base sm:text-xl'
+                    } h-full min-h-[120px] rounded-3xl bg-amber-500/95 hover:bg-amber-400 active:scale-95 border-2 border-amber-200/80 shadow-xl flex flex-col items-center justify-center gap-2.5 px-3 py-4 text-slate-950 font-black transition-transform shrink-0`}
+                  >
+                    <SkipForward className={useRotatedLandscape ? 'w-10 h-10' : 'w-7 h-7 sm:w-9 sm:h-9'} />
+                    <span>تخطي ⏭️</span>
+                  </button>
 
-            {/* Giant Secret Word Display */}
-            <div className="flex-1 rounded-3xl bg-slate-900/75 border-2 border-white/30 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center min-w-0">
-              {flashState === 'correct' ? (
-                <div className="text-4xl sm:text-6xl font-black text-white animate-bounce">
-                  صح! ✅ +{POINTS_PER_CORRECT}
-                </div>
-              ) : flashState === 'skip' ? (
-                <div className="text-4xl sm:text-6xl font-black text-white">تخطي ⏭️</div>
-              ) : (
-                <>
-                  <span className="text-xs sm:text-sm font-extrabold text-white/75 mb-2">
-                    المطلوب تمثيله أو وصفه بدون كلام:
-                  </span>
-                  <div className="text-3xl sm:text-6xl font-black leading-tight text-white drop-shadow-lg break-words max-w-full">
-                    {activeWord}
+                  {/* Giant Secret Word Display */}
+                  <div className="flex-1 h-full rounded-3xl bg-slate-900/75 border-2 border-white/30 shadow-2xl flex flex-col items-center justify-center p-4 sm:p-6 text-center min-w-0">
+                    {flashState === 'correct' ? (
+                      <div className="text-4xl sm:text-6xl font-black text-white animate-bounce">
+                        صح! ✅ +{POINTS_PER_CORRECT}
+                      </div>
+                    ) : flashState === 'skip' ? (
+                      <div className="text-4xl sm:text-6xl font-black text-white">تخطي ⏭️</div>
+                    ) : (
+                      <>
+                        <span className="text-xs sm:text-sm font-extrabold text-white/75 mb-2">
+                          المطلوب تمثيله أو وصفه بدون كلام:
+                        </span>
+                        <div
+                          className={`${
+                            useRotatedLandscape ? 'text-4xl sm:text-5xl' : 'text-3xl sm:text-6xl'
+                          } font-black leading-tight text-white drop-shadow-lg break-words max-w-full`}
+                        >
+                          {activeWord}
+                        </div>
+                        {gyroSupported && gyroPermissionState === 'granted' && gyroEnabled && (
+                          <span className="mt-4 text-[11px] font-bold text-white/70">
+                            ميل لتحت = صح ✅ · لفوق = تخطي ⏭️ (أو اضغط الزراير الجانبية)
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
-                  {gyroSupported && gyroPermissionState === 'granted' && gyroEnabled && (
-                    <span className="mt-4 text-[11px] font-bold text-white/70">
-                      ميل لتحت = صح ✅ · لفوق = تخطي ⏭️ (أو اضغط الزراير الجانبية)
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
 
-            {/* Correct Button (Left side in RTL) */}
-            <button
-              type="button"
-              onClick={() => advanceCard('correct')}
-              className="w-24 sm:w-40 min-h-[120px] rounded-3xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 border-2 border-emerald-200/80 shadow-xl flex flex-col items-center justify-center gap-2 px-2 py-3 text-white font-black text-base sm:text-xl transition-transform shrink-0"
-            >
-              <Check className="w-8 h-8 sm:w-10 sm:h-10" />
-              <span>صح! ✅</span>
-            </button>
-          </div>
+                  {/* Correct Button (Left side in RTL) */}
+                  <button
+                    type="button"
+                    onClick={() => advanceCard('correct')}
+                    className={`${
+                      useRotatedLandscape
+                        ? 'w-[25%] min-w-[118px] text-xl'
+                        : 'w-26 sm:w-44 text-base sm:text-xl'
+                    } h-full min-h-[120px] rounded-3xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 border-2 border-emerald-200/80 shadow-xl flex flex-col items-center justify-center gap-2.5 px-3 py-4 text-white font-black transition-transform shrink-0`}
+                  >
+                    <Check className={useRotatedLandscape ? 'w-11 h-11' : 'w-8 h-8 sm:w-10 sm:h-10'} />
+                    <span>صح! ✅</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <ConfirmModal

@@ -682,9 +682,9 @@ function drawStickmanFighter(
   }
   ctx.restore();
 
-  // Jump Charge Progress Ring (0 -> 2.0s continuous upward hold)
+  // Jump Charge Progress Ring (0 -> 1.5s continuous upward hold)
   if (f.jumpChargeSec > 0.08) {
-    const jumpProg = Math.min(1, f.jumpChargeSec / 2.0);
+    const jumpProg = Math.min(1, f.jumpChargeSec / 1.5);
     ctx.save();
     ctx.strokeStyle = 'rgba(250, 204, 21, 0.25)';
     ctx.lineWidth = 3.5;
@@ -722,10 +722,10 @@ function drawStickmanFighter(
     ctx.restore();
   }
 
-  // Glowing Protective Energy Bubble Shield (Ground-Duck 4s Shield OR 1s Pit Respawn Invuln)
+  // Glowing Protective Energy Bubble Shield (Ground-Duck 2s Shield OR 1s Pit Respawn Invuln)
   if (hasBubbleShield || isInvuln) {
     const shieldRem = hasBubbleShield
-      ? Math.max(0, (f.bubbleShieldUntil - now) / 4000)
+      ? Math.max(0, (f.bubbleShieldUntil - now) / 2000)
       : Math.max(0, (f.invulnUntil - now) / 1000);
     const pulseR = 32 + Math.sin(now * 0.018) * 2.2;
     ctx.save();
@@ -1381,6 +1381,11 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
   const bannersRef = useRef<FloatingBanner[]>([]);
   const planksRef = useRef<BridgePlank[]>([]);
   const joysticksRef = useRef<StickJoystick[]>(players.map(() => createEmptyJoystick()));
+  const joyRectCacheRef = useRef<Array<{ cx: number; cy: number; ox: number; oy: number } | null>>(
+    players.map(() => null)
+  );
+  const prevHpSnapshotRef = useRef<number[]>(players.map(() => 100));
+  const prevShieldSnapshotRef = useRef<number[]>(players.map(() => 2));
 
   const activeMapRef = useRef<MapId>('ice');
   const roundStartRef = useRef<number>(0);
@@ -1417,6 +1422,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           h: Math.max(320, Math.round(el.clientHeight)),
         };
       }
+      joyRectCacheRef.current = players.map(() => null);
     };
     const raf = window.requestAnimationFrame(handleResize);
     const ro = new ResizeObserver(handleResize);
@@ -1591,10 +1597,13 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     lightningRef.current = [];
     bannersRef.current = [];
     joysticksRef.current = players.map(() => createEmptyJoystick());
+    joyRectCacheRef.current = players.map(() => null);
     hitStopUntilRef.current = 0;
     screenShakeRef.current = 0;
     koCelebrateAtRef.current = null;
     finishedRef.current = false;
+    prevHpSnapshotRef.current = players.map(() => 100);
+    prevShieldSnapshotRef.current = players.map(() => 2);
     setHpSnapshot(players.map(() => 100));
     setShieldChargesSnapshot(players.map(() => 2));
   }, [players, roundNum, selectedMapChoice, syncArenaSize]);
@@ -1986,16 +1995,15 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           }
           f.aimAngle = Math.atan2(joy.dy, joy.dx);
 
-          // 2.0-second continuous upward hold jump (dy < -0.6 while mag > 0.45)
+          // Unlimited 1.5-second continuous upward hold jump (ground or mid-air)
           const holdingJumpUp = !isRagdoll && joy.mag > 0.45 && joy.dy < -0.6;
-          if (holdingJumpUp && (canCoyoteJump || f.jumpsLeft > 0)) {
+          if (holdingJumpUp) {
             f.jumpChargeSec += dt;
-            if (f.jumpChargeSec >= 2.0) {
+            if (f.jumpChargeSec >= 1.5) {
               f.jumpChargeSec = 0;
-              const isGroundJump = canCoyoteJump;
-              f.vy = isGroundJump ? -495 : -445;
+              const isGroundJump = f.onGround || now - f.lastGroundedAt <= 115;
+              f.vy = isGroundJump ? -495 : -455;
               f.onGround = false;
-              f.jumpsLeft = isGroundJump ? 1 : 0;
               soundManager.play('bounce');
               triggerHaptic(22);
               spawnDust(f.x, f.y + 22, 7);
@@ -2018,7 +2026,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           f.jumpChargeSec = 0;
         }
 
-        // Ground-Duck Energy Shield (hold dy > 0.6 while on solid ground for 3 continuous seconds -> 4s bubble shield, 2/2 uses)
+        // Ground-Duck Energy Shield (hold dy > 0.6 while on solid ground for 3 continuous seconds -> 2s bubble shield, 2/2 uses)
         const holdingDuck =
           f.onGround &&
           !isRagdoll &&
@@ -2029,7 +2037,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
           if (f.duckChargeSec >= 3.0) {
             f.duckChargeSec = 0;
             f.shieldCharges -= 1;
-            f.bubbleShieldUntil = now + 4000;
+            f.bubbleShieldUntil = now + 2000;
             soundManager.play('powerup');
             triggerHaptic([25, 30, 35]);
             spawnSparks(f.x, f.y - 4, '#22D3EE', 16);
@@ -2772,8 +2780,23 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         .map((b) => ({ ...b, y: b.y - 28 * dt, life: b.life - dt * 0.9 }))
         .filter((b) => b.life > 0);
 
-      setHpSnapshot(fightersRef.current.map((f) => Math.round(f.hp)));
-      setShieldChargesSnapshot(fightersRef.current.map((f) => f.shieldCharges));
+      const nextHp = fightersRef.current.map((f) => Math.round(f.hp));
+      if (
+        nextHp.length !== prevHpSnapshotRef.current.length ||
+        nextHp.some((v, i) => v !== prevHpSnapshotRef.current[i])
+      ) {
+        prevHpSnapshotRef.current = nextHp;
+        setHpSnapshot(nextHp);
+      }
+
+      const nextShields = fightersRef.current.map((f) => f.shieldCharges);
+      if (
+        nextShields.length !== prevShieldSnapshotRef.current.length ||
+        nextShields.some((v, i) => v !== prevShieldSnapshotRef.current[i])
+      ) {
+        prevShieldSnapshotRef.current = nextShields;
+        setShieldChargesSnapshot(nextShields);
+      }
 
       // Check Last Stickman Standing
       const aliveList = fightersRef.current.filter((f) => f.alive);
@@ -2811,6 +2834,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     const oy = rect.height / 2;
     const cx = rect.left + ox;
     const cy = rect.top + oy;
+    joyRectCacheRef.current[idx] = { cx, cy, ox, oy };
     const j = joysticksRef.current[idx];
     if (!j) return;
     j.activePointer = e.pointerId;
@@ -2840,11 +2864,15 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
     const j = joysticksRef.current[idx];
     if (!j || j.activePointer !== e.pointerId) return;
     e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ox = rect.width / 2;
-    const oy = rect.height / 2;
-    const cx = rect.left + ox;
-    const cy = rect.top + oy;
+    let cached = joyRectCacheRef.current[idx];
+    if (!cached) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const ox = rect.width / 2;
+      const oy = rect.height / 2;
+      cached = { cx: rect.left + ox, cy: rect.top + oy, ox, oy };
+      joyRectCacheRef.current[idx] = cached;
+    }
+    const { cx, cy, ox, oy } = cached;
     j.originX = ox;
     j.originY = oy;
     const { dx: vx, dy: vy } = mapScreenDeltaToLandscape(
@@ -2893,7 +2921,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
         <div className="flex-1 overflow-y-auto">
           <ArcadePreGameSetup
             title="حرب الستيك مان"
-            subtitle="حرك الجويستيك للضرب والتصويب واثبت لفوق ثانيتين للنط! آخر مقاتل صامد يكسب الجولة!"
+            subtitle="حرك الجويستيك للضرب والتصويب واثبت لفوق 1.5 ثانية للنط بلا حدود! آخر مقاتل صامد يكسب الجولة!"
             players={players}
             accentBgClass="bg-gradient-to-br from-[#0284C7] via-[#6366F1] to-[#F97316]"
             icon={<Swords className="w-12 h-12 text-white drop-shadow" />}
@@ -3039,7 +3067,7 @@ export const StickmanBattleGame: React.FC<StickmanBattleGameProps> = ({
                 سلاح الجولة: {weaponMeta.emoji} {weaponMeta.name}
               </div>
               <p className="mt-2 text-xs font-extrabold text-white/85">
-                اثبت الجويستيك لفوق ثانيتين للنط ⬆️ · انزل لتحت 3 ثواني لدرع الطاقة! 🛡️
+                اثبت الجويستيك لفوق 1.5 ثانية للنط بلا حدود ⬆️ · انزل لتحت 3 ثواني لدرع الطاقة (مرتين)! 🛡️
               </p>
             </div>
           )}
