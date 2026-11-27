@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, Eraser, Palette, Plus, RotateCcw, Trash2, Users, X } from 'lucide-react';
 import { BANNER_COLOR_CLASSES, PLAYER_COLOR_CYCLE } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
+import { useNavigationGuard } from '../hooks/useNavigationGuard';
 import { BannerColor, Player } from '../types/game';
 import { soundManager } from '../utils/soundManager';
 import { getUsedItemsCount, resetAllUsedItems } from '../utils/usedItemsMemory';
@@ -48,6 +49,16 @@ export const PlayerSetupScreen: React.FC<PlayerSetupScreenProps> = ({
 
   const hasAnyScore = players.some((p) => p.score !== 0);
   const editingPlayer = players.find((p) => p.id === editingPlayerId) ?? null;
+
+  useNavigationGuard(Boolean(editingPlayer), () => setEditingPlayerId(null), {
+    blockUnload: false,
+  });
+  useNavigationGuard(showResetConfirm, () => setShowResetConfirm(false), {
+    blockUnload: false,
+  });
+  useNavigationGuard(showHistoryResetConfirm, () => setShowHistoryResetConfirm(false), {
+    blockUnload: false,
+  });
 
   const handleAdd = (e?: React.FormEvent) => {
     e?.preventDefault();

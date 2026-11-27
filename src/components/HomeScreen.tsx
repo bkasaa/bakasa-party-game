@@ -14,6 +14,7 @@ import {
 import { FOOTBALL_GAMES } from '../data/footballData';
 import { HUB_GAMES } from '../data/gameData';
 import { useTapGuard } from '../hooks/useAntiDoubleTap';
+import { useNavigationGuard } from '../hooks/useNavigationGuard';
 import { soundManager } from '../utils/soundManager';
 import { useTheme } from '../utils/themeManager';
 import { getUsedItemsCount, resetAllUsedItems } from '../utils/usedItemsMemory';
@@ -91,6 +92,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       setClosingRulesModal(false);
     }, 180);
   };
+
+  useNavigationGuard(showRulesModal, closeRulesModal, { blockUnload: false });
+  useNavigationGuard(showResetHistoryModal, () => setShowResetHistoryModal(false), {
+    blockUnload: false,
+  });
 
   const partyGamesCount = HUB_GAMES.filter((g) => g.active).length;
   const arcadeGamesCount = ARCADE_GAMES.length;

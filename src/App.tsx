@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { soundEngine } from './utils/soundEngine';
+import { soundManager } from './utils/soundManager';
+import { ConfirmModal } from './components/ConfirmModal';
 import { CustomContentModal } from './components/CustomContentModal';
 import { HomeScreen } from './components/HomeScreen';
 import { MainHubScreen } from './components/MainHubScreen';
@@ -39,6 +41,12 @@ import { HomeNavigationProvider } from './contexts/NavigationContext';
 import { DEFAULT_FOOTBALL_SETTINGS, FootballGlobalSettings } from './data/footballData';
 import { DEFAULT_PLAYER_NAMES, PLAYER_COLOR_CYCLE } from './data/gameData';
 import { getCustomTotalCount } from './utils/customContentStorage';
+import {
+  allowAppExit,
+  ensureAppGuardState,
+  pushAppGuardState,
+  useRootNavigationTrap,
+} from './hooks/useNavigationGuard';
 import { useWakeLock } from './hooks/useWakeLock';
 import {
   ARCADE_COLOR_ORDER,
@@ -159,6 +167,7 @@ export default function App() {
   >('HUB');
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showExitAppConfirm, setShowExitAppConfirm] = useState(false);
   const [customTotalCount, setCustomTotalCount] = useState<number>(() => getCustomTotalCount());
 
   const isGameActive =
@@ -171,14 +180,110 @@ export default function App() {
   useWakeLock(isGameActive);
 
   const prevScreenRef = useRef<AppScreen>(screen);
+  const navigatedViaPopRef = useRef(false);
+
   useEffect(() => {
     if (prevScreenRef.current !== screen) {
       prevScreenRef.current = screen;
+      if (navigatedViaPopRef.current) {
+        navigatedViaPopRef.current = false;
+      } else {
+        pushAppGuardState(screen);
+      }
       if (soundEngine.timeSinceLastPlay() > 120) {
         soundEngine.play('whoosh');
       }
     }
   }, [screen]);
+
+  const getPreviousScreen = (current: AppScreen): AppScreen => {
+    switch (current) {
+      case 'SETUP':
+        if (
+          setupReturnTarget === 'FOOTBALL_HUB' ||
+          setupReturnTarget === 'TOURNAMENT_MODE' ||
+          setupReturnTarget === 'ARCADE_BALANCE' ||
+          setupReturnTarget === 'ARCADE_KHLAWIS'
+        ) {
+          return setupReturnTarget;
+        }
+        return 'HOME';
+      case 'HUB':
+        return 'SETUP';
+      case 'SPY_GAME':
+      case 'BOMB_QUESTIONS_GAME':
+      case 'BOMB_CLASSIC_GAME':
+      case 'DRAW_GAME':
+      case 'FORGER_GAME':
+      case 'COURT_GAME':
+      case 'HEADSUP_GAME':
+        return 'HUB';
+      case 'ARCADE_SETUP':
+        return 'HOME';
+      case 'ARCADE_HUB':
+        return 'ARCADE_SETUP';
+      case 'ARCADE_PAINT':
+      case 'ARCADE_KNIFE':
+      case 'ARCADE_FROG':
+      case 'ARCADE_BIRDS':
+      case 'ARCADE_RACING':
+      case 'ARCADE_CHICKEN':
+      case 'ARCADE_SOCCER':
+      case 'ARCADE_STICKMAN':
+      case 'ARCADE_BALANCE':
+      case 'ARCADE_KHLAWIS':
+        return 'ARCADE_HUB';
+      case 'FOOTBALL_HUB':
+        return 'HOME';
+      case 'FOOTBALL_SPY':
+      case 'FOOTBALL_CHAIN':
+      case 'FOOTBALL_THREE':
+      case 'FOOTBALL_CHARADES':
+      case 'FOOTBALL_PENALTY':
+      case 'FOOTBALL_PASSWORD':
+      case 'FOOTBALL_AUCTION':
+      case 'FOOTBALL_TICTACTOE':
+        return 'FOOTBALL_HUB';
+      case 'TOURNAMENT_MODE':
+        return 'HOME';
+      case 'HOME':
+      default:
+        return 'HOME';
+    }
+  };
+
+  useRootNavigationTrap(() => {
+    if (showSplash) {
+      setShowSplash(false);
+      return false;
+    }
+    if (showExitAppConfirm) {
+      soundManager.play('whoosh');
+      setShowExitAppConfirm(false);
+      return false;
+    }
+    if (showSettingsModal) {
+      soundManager.play('whoosh');
+      setShowSettingsModal(false);
+      return false;
+    }
+    if (showCustomModal) {
+      soundManager.play('whoosh');
+      setShowCustomModal(false);
+      setCustomTotalCount(getCustomTotalCount());
+      return false;
+    }
+    if (screen === 'HOME') {
+      soundManager.play('whoosh');
+      setShowExitAppConfirm(true);
+      return false;
+    }
+    const target = getPreviousScreen(screen);
+    soundManager.stopMusic();
+    navigatedViaPopRef.current = true;
+    setScreen(target);
+    return true;
+  });
 
   useEffect(() => {
     try {
@@ -701,6 +806,22 @@ export default function App() {
         onOpenPlayerSetup={() => {
           setSetupReturnTarget('HUB');
           setScreen('SETUP');
+        }}
+      />
+
+      <ConfirmModal
+        open={showExitAppConfirm}
+        title="متأكد إنك عايز تقفل قعدة الشلة؟"
+        message="ممكن تكمل القعدة واللعب مع الشلة أو تخرج من التطبيق."
+        cancelLabel="كمل لعب"
+        confirmLabel="خروج"
+        onCancel={() => {
+          ensureAppGuardState('HOME');
+          setShowExitAppConfirm(false);
+        }}
+        onConfirm={() => {
+          setShowExitAppConfirm(false);
+          allowAppExit();
         }}
       />
 

@@ -56,16 +56,24 @@ interface ColliderPartRect {
   h: number;
 }
 
+interface ConvexHitboxSpec {
+  kind: 'rectangle' | 'trapezoid';
+  w: number;
+  h: number;
+  slope?: number;
+}
+
 interface AnimalSpec {
   id: AnimalSpeciesId;
   name: string;
   emoji: string;
   parts: ColliderPartRect[];
+  hitbox: ConvexHitboxSpec;
   density: number;
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
-  comOffset: { x: number; y: number };
+  visualOffset: { x: number; y: number };
 }
 
 interface PlacedBodyMeta {
@@ -75,6 +83,8 @@ interface PlacedBodyMeta {
   playerName: string;
   droppedAt: number;
   highestY: number;
+  settledDuration: number;
+  hasHeavyDensity: boolean;
 }
 
 interface SplashParticle {
@@ -130,18 +140,54 @@ function getStageMetrics(vw: number, vh: number) {
   return { scale, offsetX, baseGroundScreenY, topSpawnScreenY, initialHoverY };
 }
 
-function computeComOffset(parts: ColliderPartRect[]): { x: number; y: number } {
-  const bodies = parts.map((p) => Matter.Bodies.rectangle(p.x, p.y, p.w, p.h));
-  const temp = Matter.Body.create({ parts: bodies });
-  return { x: temp.position.x, y: temp.position.y };
+const ANIMAL_BASE_DENSITY = 0.005;
+const ANIMAL_SETTLED_DENSITY = 0.05;
+
+function makeConvexHitboxBody(hitbox: ConvexHitboxSpec, x: number, y: number): Matter.Body {
+  const opts: Matter.IChamferableBodyDefinition = {
+    chamfer: { radius: 6 },
+    friction: 0.9,
+    frictionStatic: 8,
+    restitution: 0.0,
+    frictionAir: 0.04,
+    slop: 0.02,
+    density: ANIMAL_BASE_DENSITY,
+    sleepThreshold: 30,
+  };
+  if (hitbox.kind === 'trapezoid') {
+    return Matter.Bodies.trapezoid(x, y, hitbox.w, hitbox.h, hitbox.slope ?? 0.18, opts);
+  }
+  return Matter.Bodies.rectangle(x, y, hitbox.w, hitbox.h, opts);
 }
 
-const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
+function computeVisualOffset(
+  parts: ColliderPartRect[],
+  hitbox: ConvexHitboxSpec
+): { x: number; y: number } {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of parts) {
+    minX = Math.min(minX, p.x - p.w / 2);
+    maxX = Math.max(maxX, p.x + p.w / 2);
+    maxY = Math.max(maxY, p.y + p.h / 2);
+  }
+  const temp = makeConvexHitboxBody(hitbox, 0, 0);
+  const physicsBottom = temp.bounds.max.y - temp.position.y;
+  const visualCenterX = (minX + maxX) / 2;
+  return {
+    x: visualCenterX,
+    y: maxY - physicsBottom,
+  };
+}
+
+const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'visualOffset'>> = [
   {
     id: 'lion',
     name: 'أسد',
     emoji: '🦁',
-    density: 0.0024,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'rectangle', w: 66, h: 48 },
     primaryColor: '#F59E0B',
     secondaryColor: '#B45309',
     accentColor: '#FDE68A',
@@ -156,7 +202,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'giraffe',
     name: 'زرافة',
     emoji: '🦒',
-    density: 0.0021,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'trapezoid', w: 58, h: 74, slope: 0.28 },
     primaryColor: '#FBBF24',
     secondaryColor: '#92400E',
     accentColor: '#FEF3C7',
@@ -172,7 +219,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'elephant',
     name: 'فيل',
     emoji: '🐘',
-    density: 0.0032,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'rectangle', w: 76, h: 50 },
     primaryColor: '#94A3B8',
     secondaryColor: '#64748B',
     accentColor: '#CBD5E1',
@@ -187,7 +235,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'bear',
     name: 'دبدوب',
     emoji: '🐻',
-    density: 0.0026,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'rectangle', w: 58, h: 48 },
     primaryColor: '#92400E',
     secondaryColor: '#78350F',
     accentColor: '#FDE68A',
@@ -202,7 +251,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'rhino',
     name: 'وحيد القرن',
     emoji: '🦏',
-    density: 0.003,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'rectangle', w: 72, h: 46 },
     primaryColor: '#64748B',
     secondaryColor: '#475569',
     accentColor: '#E2E8F0',
@@ -218,7 +268,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'fox',
     name: 'ثعلب',
     emoji: '🦊',
-    density: 0.002,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'trapezoid', w: 64, h: 40, slope: 0.16 },
     primaryColor: '#EA580C',
     secondaryColor: '#9A3412',
     accentColor: '#FFFBEB',
@@ -234,7 +285,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'cat',
     name: 'قطة',
     emoji: '🐱',
-    density: 0.0019,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'trapezoid', w: 54, h: 40, slope: 0.16 },
     primaryColor: '#FB923C',
     secondaryColor: '#EA580C',
     accentColor: '#FEF3C7',
@@ -250,7 +302,8 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
     id: 'eagle',
     name: 'نسر',
     emoji: '🦅',
-    density: 0.0021,
+    density: ANIMAL_BASE_DENSITY,
+    hitbox: { kind: 'rectangle', w: 62, h: 38 },
     primaryColor: '#78350F',
     secondaryColor: '#451A03',
     accentColor: '#FACC15',
@@ -265,7 +318,7 @@ const RAW_ANIMAL_SPECS: Array<Omit<AnimalSpec, 'comOffset'>> = [
 
 const ANIMAL_SPECS: AnimalSpec[] = RAW_ANIMAL_SPECS.map((spec) => ({
   ...spec,
-  comOffset: computeComOffset(spec.parts),
+  visualOffset: computeVisualOffset(spec.parts, spec.hitbox),
 }));
 
 function pickRandomAnimal(): AnimalSpec {
@@ -273,28 +326,7 @@ function pickRandomAnimal(): AnimalSpec {
 }
 
 function createAnimalBody(spec: AnimalSpec, x: number, y: number, angleRad: number): Matter.Body {
-  const parts = spec.parts.map((r) =>
-    Matter.Bodies.rectangle(r.x, r.y, r.w, r.h, {
-      chamfer: { radius: 4 },
-      friction: 1.0,
-      frictionStatic: 10.0,
-      restitution: 0.0,
-      slop: 0.01,
-      density: spec.density,
-    })
-  );
-
-  const body = Matter.Body.create({
-    parts,
-    friction: 1.0,
-    frictionStatic: 10.0,
-    restitution: 0.0,
-    frictionAir: 0.05,
-    slop: 0.01,
-    sleepThreshold: 30,
-  });
-
-  Matter.Body.setPosition(body, { x, y });
+  const body = makeConvexHitboxBody(spec.hitbox, x, y);
   Matter.Body.setAngle(body, angleRad);
   return body;
 }
@@ -337,16 +369,9 @@ function drawAnimalSilhouette(
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
   ctx.rotate(angle);
-  ctx.translate(-spec.comOffset.x, -spec.comOffset.y);
+  ctx.translate(-spec.visualOffset.x, -spec.visualOffset.y);
 
-  // Subtle player tint aura on non-ghost animals
-  if (!isGhost) {
-    ctx.shadowColor = 'rgba(15, 23, 42, 0.25)';
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 3;
-  }
-
-  // Draw compound body parts with rich outlines & dual-tone detailing
+  // Draw body parts with crisp outlines & dual-tone detailing (zero shadowBlur for 60fps mobile)
   spec.parts.forEach((p, idx) => {
     const rx = p.x - p.w / 2;
     const ry = p.y - p.h / 2;
@@ -375,8 +400,6 @@ function drawAnimalSilhouette(
       ctx.fill();
     }
   });
-
-  ctx.shadowColor = 'transparent';
 
   // Deterministic natural blink cycle (~every 3.4 seconds for 130ms)
   const blinkCycle = (now + blinkSeed * 731) % 3400;
@@ -645,6 +668,8 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
   const collapseTimerRef = useRef<number | null>(null);
   const lastDropBodyIdRef = useRef<number | null>(null);
   const roundEndedRef = useRef<boolean>(false);
+  const lastMetersRef = useRef<number>(0);
+  const lastPlacedCountRef = useRef<number>(0);
 
   // VFX
   const splashesRef = useRef<SplashParticle[]>([]);
@@ -767,21 +792,30 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     roundEndedRef.current = false;
 
     const engine = Matter.Engine.create({
-      gravity: { x: 0, y: 1.05, scale: 0.001 },
+      gravity: { x: 0, y: 0.85, scale: 0.001 },
       enableSleeping: true,
-      positionIterations: 12,
-      velocityIterations: 10,
+      positionIterations: 6,
+      velocityIterations: 4,
     });
 
-    const platform = Matter.Bodies.rectangle(PLATFORM_X, PLATFORM_Y, PLATFORM_W, PLATFORM_H, {
-      isStatic: true,
-      friction: 1.0,
-      frictionStatic: 10.0,
-      restitution: 0.0,
-      slop: 0.01,
-      chamfer: { radius: 8 },
-      label: 'platform',
-    });
+    // 300px tall solid collider extending downward below the visible grass top so animals never tunnel
+    const platformColliderH = 300;
+    const platformTopY = PLATFORM_Y - PLATFORM_H / 2;
+    const platform = Matter.Bodies.rectangle(
+      PLATFORM_X,
+      platformTopY + platformColliderH / 2,
+      PLATFORM_W,
+      platformColliderH,
+      {
+        isStatic: true,
+        friction: 0.9,
+        frictionStatic: 8,
+        restitution: 0.0,
+        slop: 0.02,
+        chamfer: { radius: 8 },
+        label: 'platform',
+      }
+    );
 
     Matter.World.add(engine.world, platform);
 
@@ -830,6 +864,8 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
     settleTimerRef.current = 0;
     settlingElapsedRef.current = 0;
     lastDropBodyIdRef.current = null;
+    lastMetersRef.current = 0;
+    lastPlacedCountRef.current = 0;
     splashesRef.current = [];
     confettiRef.current = [];
     bannersRef.current = [];
@@ -857,7 +893,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       const canvas = canvasRef.current;
       if (!container || !canvas) return;
       const rect = container.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       canvas.width = Math.max(1, Math.floor(rect.width * dpr));
       canvas.height = Math.max(1, Math.floor(rect.height * dpr));
       viewSizeRef.current = { w: rect.width, h: rect.height };
@@ -922,7 +958,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       const { w: vw, h: vh } = viewSizeRef.current;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -1176,8 +1212,13 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       ctx.restore();
     };
 
+    let accumulatorMs = 0;
+    const FIXED_STEP_MS = 1000 / 60;
+    const FIXED_STEP_SEC = FIXED_STEP_MS / 1000;
+
     const step = (now: number) => {
-      const dt = Math.min(0.032, (now - lastTs) / 1000);
+      const rawDtMs = Math.min(33.33, Math.max(0, now - lastTs));
+      const dt = rawDtMs / 1000;
       lastTs = now;
       const engine = engineRef.current;
       if (!engine) return;
@@ -1188,35 +1229,39 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           (aimTargetAngleRef.current - aimAngleRef.current) * Math.min(1, dt * 18);
       }
 
-      // Strong angular damping (equivalent to angularDamping: 0.85) + micro-jitter suppression
-      const bodiesPre = Matter.Composite.allBodies(engine.world);
-      for (const b of bodiesPre) {
-        if (b.isStatic || b.isSleeping) continue;
-        const meta = metaMapRef.current.get(b.id);
-        const angDamp = Math.pow(0.15, dt * 4.5);
-        Matter.Body.setAngularVelocity(b, b.angularVelocity * angDamp);
-        if (meta && now - meta.droppedAt > 240) {
-          const spd = Math.hypot(b.velocity.x, b.velocity.y);
-          if (spd < 0.14 && Math.abs(b.angularVelocity) < 0.025) {
-            Matter.Body.setVelocity(b, {
-              x: b.velocity.x * 0.45,
-              y: b.velocity.y * 0.45,
-            });
+      // Fixed-timestep Matter.js update (always 1000/60 ms per step, max 2 steps per frame)
+      accumulatorMs += rawDtMs;
+      let physicsSteps = 0;
+      while (accumulatorMs >= FIXED_STEP_MS && physicsSteps < 2) {
+        const bodiesPre = Matter.Composite.allBodies(engine.world);
+        for (const b of bodiesPre) {
+          if (b.isStatic || b.isSleeping) continue;
+          const meta = metaMapRef.current.get(b.id);
+          Matter.Body.setAngularVelocity(b, b.angularVelocity * 0.88);
+          if (meta && now - meta.droppedAt > 240) {
+            const spd = Math.hypot(b.velocity.x, b.velocity.y);
+            if (spd < 0.14 && Math.abs(b.angularVelocity) < 0.025) {
+              Matter.Body.setVelocity(b, {
+                x: b.velocity.x * 0.5,
+                y: b.velocity.y * 0.5,
+              });
+            }
           }
         }
+        Matter.Engine.update(engine, FIXED_STEP_MS);
+        accumulatorMs -= FIXED_STEP_MS;
+        physicsSteps++;
       }
-
-      // Step Matter.js physics
-      Matter.Engine.update(engine, dt * 1000);
 
       // Smooth rising camera interpolation
       cameraYRef.current += (targetCameraYRef.current - cameraYRef.current) * Math.min(1, dt * 6.5);
 
-      // Check stacked bodies for height & water falls
+      // Check stacked bodies for height, settled heavy density, & water falls
       let highestY = PLATFORM_Y - PLATFORM_H / 2;
       let maxVel = 0;
       let fellBody: { body: Matter.Body; meta: PlacedBodyMeta } | null = null;
       let stackedCount = 0;
+      const stepElapsedSec = physicsSteps * FIXED_STEP_SEC;
 
       const bodies = Matter.Composite.allBodies(engine.world);
       for (const b of bodies) {
@@ -1233,8 +1278,21 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         if (b.bounds.min.y < highestY) {
           highestY = b.bounds.min.y;
         }
+
+        const spd = b.isSleeping ? 0 : Math.hypot(b.velocity.x, b.velocity.y);
+        if (!meta.hasHeavyDensity && stepElapsedSec > 0) {
+          if (spd < 0.15) {
+            meta.settledDuration += stepElapsedSec;
+            if (meta.settledDuration >= 0.8) {
+              meta.hasHeavyDensity = true;
+              Matter.Body.setDensity(b, ANIMAL_SETTLED_DENSITY);
+            }
+          } else {
+            meta.settledDuration = 0;
+          }
+        }
+
         if (!b.isSleeping) {
-          const spd = Math.hypot(b.velocity.x, b.velocity.y);
           maxVel = Math.max(maxVel, spd, Math.abs(b.angularVelocity) * 14);
         }
       }
@@ -1244,8 +1302,14 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         0,
         Math.round(((PLATFORM_Y - PLATFORM_H / 2 - highestY) / 40) * 10) / 10
       );
-      setTowerHeightM(meters);
-      setPlacedCount(stackedCount);
+      if (meters !== lastMetersRef.current) {
+        lastMetersRef.current = meters;
+        setTowerHeightM(meters);
+      }
+      if (stackedCount !== lastPlacedCountRef.current) {
+        lastPlacedCountRef.current = stackedCount;
+        setPlacedCount(stackedCount);
+      }
 
       if (fellBody && !roundEndedRef.current && turnStageRef.current !== 'COLLAPSED') {
         const culpritIdx = turnIdxRef.current;
@@ -1310,7 +1374,7 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
           settleTimerRef.current = 0;
         }
 
-        if (settleTimerRef.current >= 0.4 || settlingElapsedRef.current >= 3.5) {
+        if (settleTimerRef.current >= 0.4 || settlingElapsedRef.current >= 4.2) {
           // Safe placement! Award player points + confetti/dust burst (capped at <= 60 active particles)
           const activeP = players[turnIdxRef.current];
           const confettiPalette = ['#FACC15', '#34D399', '#38BDF8', '#F472B6', '#FB923C'];
@@ -1352,31 +1416,37 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
         }
       }
 
-      // Update VFX
-      splashesRef.current = splashesRef.current
-        .map((s) => ({
-          ...s,
-          x: s.x + s.vx * dt,
-          y: s.y + s.vy * dt,
-          vy: s.vy + 460 * dt,
-          life: s.life - dt,
-        }))
-        .filter((s) => s.life > 0);
+      // Update VFX only when active
+      if (splashesRef.current.length > 0) {
+        splashesRef.current = splashesRef.current
+          .map((s) => ({
+            ...s,
+            x: s.x + s.vx * dt,
+            y: s.y + s.vy * dt,
+            vy: s.vy + 460 * dt,
+            life: s.life - dt,
+          }))
+          .filter((s) => s.life > 0);
+      }
 
-      confettiRef.current = confettiRef.current
-        .map((c) => ({
-          ...c,
-          x: c.x + c.vx * dt,
-          y: c.y + c.vy * dt,
-          vy: c.vy + 290 * dt,
-          rot: c.rot + c.vRot * dt,
-          life: c.life - dt,
-        }))
-        .filter((c) => c.life > 0);
+      if (confettiRef.current.length > 0) {
+        confettiRef.current = confettiRef.current
+          .map((c) => ({
+            ...c,
+            x: c.x + c.vx * dt,
+            y: c.y + c.vy * dt,
+            vy: c.vy + 290 * dt,
+            rot: c.rot + c.vRot * dt,
+            life: c.life - dt,
+          }))
+          .filter((c) => c.life > 0);
+      }
 
-      bannersRef.current = bannersRef.current
-        .map((b) => ({ ...b, y: b.y - 26 * dt, life: b.life - dt * 0.9 }))
-        .filter((b) => b.life > 0);
+      if (bannersRef.current.length > 0) {
+        bannersRef.current = bannersRef.current
+          .map((b) => ({ ...b, y: b.y - 26 * dt, life: b.life - dt * 0.9 }))
+          .filter((b) => b.life > 0);
+      }
 
       drawScene(now);
       rafId = window.requestAnimationFrame(step);
@@ -1498,6 +1568,8 @@ export const BalanceTowerGame: React.FC<BalanceTowerGameProps> = ({
       playerName: activeP?.name ?? 'لاعب',
       droppedAt: performance.now(),
       highestY: spawnY,
+      settledDuration: 0,
+      hasHeavyDensity: false,
     });
     lastDropBodyIdRef.current = body.id;
     Matter.World.add(engineRef.current.world, body);
